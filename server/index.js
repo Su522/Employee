@@ -352,9 +352,55 @@ app.get('/api/schedule', async (req, res) => {
   }
 });
 
+// Get sources for current schedule
+app.get('/api/schedule/sources', async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT ws.Work_Schedule_ID, DATE_FORMAT(ws.schedule_date, '%Y-%m-%d') as schedule_date,
+              ws.start_time, ss.source_type
+       FROM WorkSchedule ws
+       LEFT JOIN ScheduleSource ss ON ws.Work_Schedule_ID = ss.Work_Schedule_ID
+       WHERE ws.schedule_date BETWEEN ? AND ?`,
+      [getNextMondayStr(), getNextSundayStr()]
+    );
+
+    const sources = {};
+    rows.forEach(item => {
+      const colIdx = getDayColIdxFromDate(item.schedule_date);
+      const startTimeStr = item.start_time;
+      const rowIdx = TIME_SLOTS.findIndex(slot => slot.start === startTimeStr);
+
+      if (colIdx !== -1 && rowIdx !== -1) {
+        const key = `${rowIdx}-${colIdx}`;
+        const current = sources[key];
+        const incoming = item.source_type || 'auto';
+        if (!current) {
+          sources[key] = incoming;
+        } else if (incoming === 'manual' || current === 'manual') {
+          sources[key] = 'manual';
+        } else if (incoming === 'swap' || current === 'swap') {
+          sources[key] = 'swap';
+        }
+      }
+    });
+
+    res.json(sources);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to get schedule sources' });
+  }
+});
+
+
 // Save current schedule and automatically calculate/save PayRecords in database
 app.post('/api/schedule/save', async (req, res) => {
-  const schedule = req.body; // { "row-col": [name1, name2] }
+  let schedule = req.body;
+  let sources = {};
+
+  if (req.body && req.body.schedule) {
+    schedule = req.body.schedule;
+    sources = req.body.sources || {};
+  }
   
   try {
     // 1. Get all employees mapping name -> { id, level, hourly_wage }
@@ -415,6 +461,14 @@ app.post('/api/schedule/save', async (req, res) => {
         );
         const newWsId = wsResult.insertId;
 
+        // Insert into ScheduleSource
+        const sourceType = sources[key] || 'manual';
+        await db.query(
+          `INSERT INTO ScheduleSource (Work_Schedule_ID, source_type)
+           VALUES (?, ?)`,
+          [newWsId, sourceType]
+        );
+
         // Calculate pay record based on individual employee's hourly wage
         const wagePerHour = emp.hourly_wage || 200;
         const workHours = 2.0; // Each time slot represents 2 hours
@@ -441,6 +495,7 @@ app.post('/api/schedule/save', async (req, res) => {
     res.status(500).json({ error: 'Failed to save schedule and pay records' });
   }
 });
+
 
 // Get pay records aggregated per employee for the active week
 app.get('/api/pay-records', async (req, res) => {
@@ -655,6 +710,15 @@ app.post('/api/swaps/approve', async (req, res) => {
       "UPDATE swapRequest SET status = 'approved' WHERE request_ID = ?",
       [requestId]
     );
+
+    // Update ScheduleSource to 'swap'
+    await db.query(
+      `INSERT INTO ScheduleSource (Work_Schedule_ID, source_type)
+       VALUES (?, 'swap')
+       ON DUPLICATE KEY UPDATE source_type = 'swap'`,
+      [wsId]
+    );
+
 
     await db.query('COMMIT');
     res.json({ message: 'Swap request approved, schedule and pay records updated successfully' });

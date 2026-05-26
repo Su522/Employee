@@ -6,6 +6,7 @@ export default function ScheduleManagement() {
   const timeSlots = ['08:00 - 10:00', '10:00 - 12:00', '12:00 - 14:00', '14:00 - 16:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00', '22:00 - 00:00'];
   
   const [schedule, setSchedule] = useState({});
+  const [sources, setSources] = useState({});
   const [employees, setEmployees] = useState([]);
   const [allAvailabilities, setAllAvailabilities] = useState({});
   const [settings, setSettings] = useState({
@@ -25,6 +26,12 @@ export default function ScheduleManagement() {
       const schedRes = await fetch('/api/schedule');
       const schedData = await schedRes.json();
       setSchedule(schedData);
+
+      const sourcesRes = await fetch('/api/schedule/sources');
+      if (sourcesRes.ok) {
+        const sourcesData = await sourcesRes.json();
+        setSources(sourcesData);
+      }
 
       const empRes = await fetch('/api/employees');
       const empData = await empRes.json();
@@ -50,6 +57,7 @@ export default function ScheduleManagement() {
       console.error('Failed to fetch schedule data', err);
     }
   };
+
 
   useEffect(() => {
     fetchData();
@@ -138,6 +146,15 @@ export default function ScheduleManagement() {
         });
       });
 
+      // Set all sources to auto
+      const autoSources = {};
+      timeSlots.forEach((_, rIdx) => {
+        days.forEach((_, cIdx) => {
+          autoSources[`${rIdx}-${cIdx}`] = 'auto';
+        });
+      });
+      setSources(autoSources);
+
       setSchedule(newSchedule);
       setIsGenerating(false);
       setHasUnsavedChanges(true);
@@ -145,12 +162,13 @@ export default function ScheduleManagement() {
     }, 1200);
   };
 
+
   const saveToStorage = async () => {
     try {
       const res = await fetch('/api/schedule/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(schedule)
+        body: JSON.stringify({ schedule, sources })
       });
       if (!res.ok) throw new Error('Failed to save schedule');
       setHasUnsavedChanges(false);
@@ -161,10 +179,12 @@ export default function ScheduleManagement() {
     }
   };
 
+
   const removeEmployee = (slotKey, empName) => {
     const newSchedule = { ...schedule };
     newSchedule[slotKey] = newSchedule[slotKey].filter(name => name !== empName);
     setSchedule(newSchedule);
+    setSources(prev => ({ ...prev, [slotKey]: 'manual' }));
     setHasUnsavedChanges(true);
   };
 
@@ -178,10 +198,12 @@ export default function ScheduleManagement() {
     if (!(newSchedule[slotKey] || []).includes(name)) {
       newSchedule[slotKey] = [...(newSchedule[slotKey] || []), name];
       setSchedule(newSchedule);
+      setSources(prev => ({ ...prev, [slotKey]: 'manual' }));
       setHasUnsavedChanges(true);
     }
     setSelectionModal({ ...selectionModal, isOpen: false });
   };
+
 
   // Helper to check if employee is free in a 2-hour block
   const checkAvailability = (empName, rowIdx, dayIdx) => {
@@ -247,8 +269,20 @@ export default function ScheduleManagement() {
                 {days.map((_, colIdx) => {
                   const key = `${rowIdx}-${colIdx}`;
                   const emps = schedule[key] || [];
+                  const source = sources[key];
                   return (
                     <div key={key} className="p-3 min-h-[130px] border-r border-gray-50 flex flex-col gap-2 group/cell hover:bg-indigo-50/10 transition-colors">
+                      {emps.length > 0 && source && (
+                        <div className="flex justify-between items-center px-1">
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg border ${
+                            source === 'auto' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
+                            source === 'swap' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                            'bg-amber-50 text-amber-600 border-amber-100'
+                          }`}>
+                            {source === 'auto' ? '系統自動' : source === 'swap' ? '換班代班' : '手動微調'}
+                          </span>
+                        </div>
+                      )}
                       {emps.map(name => (
                         <div key={name} className="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-gray-100 shadow-sm group/tag hover:border-indigo-200 transition-all">
                           <span className="text-[11px] font-bold text-slate-700">{name}</span>
@@ -264,6 +298,7 @@ export default function ScheduleManagement() {
                     </div>
                   );
                 })}
+
               </div>
             ))}
           </div>
