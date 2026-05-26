@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, ArrowLeftRight, User, CheckCircle2, ChevronLeft, ChevronRight, Bell, Sparkles } from 'lucide-react';
+import { Calendar, Clock, ArrowLeftRight, User, CheckCircle2, ChevronLeft, ChevronRight, Bell, Sparkles, ChevronDown } from 'lucide-react';
 
 export default function EmployeeDashboard() {
   const [currentUser, setCurrentUser] = useState('訪客');
@@ -11,54 +11,93 @@ export default function EmployeeDashboard() {
   const [isImpersonated, setIsImpersonated] = useState(false);
   const [viewMode, setViewMode] = useState('personal'); // 'personal' or 'all'
   const [activeWeek, setActiveWeek] = useState({ start: '', end: '' });
+  const [weekOffset, setWeekOffset] = useState(0); // Default to 0 (This Week) for employee view
+
+  const loadDashboardData = async (offset) => {
+    try {
+      const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
+      
+      // 1. Fetch schedule
+      const schedRes = await fetch(`/api/schedule?offset=${offset}`);
+      const schedData = await schedRes.json();
+      setSchedule(schedData);
+
+      // 2. Fetch employees to calculate pay
+      const empRes = await fetch('/api/employees');
+      const empData = await empRes.json();
+
+      const userProfile = empData.find(e => e.name === auth.name);
+      const rate = userProfile?.hourlyWage || (userProfile?.level === 'senior' ? 220 : 200);
+
+      // 3. Calculate hours and pay
+      let userHours = 0;
+      Object.values(schedData).forEach(emps => {
+        if (emps.includes(auth.name)) userHours += 2;
+      });
+
+      setStats({
+        hours: userHours,
+        pay: userHours * rate
+      });
+
+      // 4. Fetch active week dates
+      const weekRes = await fetch(`/api/active-week?offset=${offset}`);
+      if (weekRes.ok) {
+        const weekData = await weekRes.json();
+        setActiveWeek({
+          start: weekData.start.replace(/-/g, '/'),
+          end: weekData.end.substring(5).replace(/-/g, '/')
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load employee dashboard data', err);
+    }
+  };
+
+  const getWeeksList = () => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    const currentMonday = new Date(today);
+    currentMonday.setDate(diff);
+
+    const list = [];
+    const labels = ['前兩週', '上週', '本週', '下週'];
+    const offsets = [-2, -1, 0, 1];
+
+    offsets.forEach((offset, idx) => {
+      const monday = new Date(currentMonday);
+      monday.setDate(currentMonday.getDate() + (offset * 7));
+      
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+
+      const startStr = `${monday.getFullYear()}/${String(monday.getMonth() + 1).padStart(2, '0')}/${String(monday.getDate()).padStart(2, '0')}`;
+      const endStr = `${sunday.getFullYear()}/${String(sunday.getMonth() + 1).padStart(2, '0')}/${String(sunday.getDate()).padStart(2, '0')}`;
+
+      list.push({
+        offset,
+        label: `${labels[idx]}班表 (${startStr} - ${endStr})`
+      });
+    });
+
+    return list;
+  };
+
+  const getWeekLabel = (offset) => {
+    if (offset === 1) return '下週';
+    if (offset === 0) return '本週';
+    if (offset === -1) return '上週';
+    if (offset === -2) return '前兩週';
+    return '該週';
+  };
 
   useEffect(() => {
     const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
     setCurrentUser(auth.name);
     setIsImpersonated(auth.isImpersonated);
-
-    const loadDashboardData = async () => {
-      try {
-        // 1. Fetch schedule
-        const schedRes = await fetch('/api/schedule');
-        const schedData = await schedRes.json();
-        setSchedule(schedData);
-
-        // 2. Fetch employees to calculate pay
-
-        const empRes = await fetch('/api/employees');
-        const empData = await empRes.json();
-
-        const userProfile = empData.find(e => e.name === auth.name);
-        const rate = userProfile?.hourlyWage || (userProfile?.level === 'senior' ? 220 : 200);
-
-        // 3. Calculate hours and pay
-        let userHours = 0;
-        Object.values(schedData).forEach(emps => {
-          if (emps.includes(auth.name)) userHours += 2;
-        });
-
-        setStats({
-          hours: userHours,
-          pay: userHours * rate
-        });
-
-        // 4. Fetch active week dates
-        const weekRes = await fetch('/api/active-week');
-        if (weekRes.ok) {
-          const weekData = await weekRes.json();
-          setActiveWeek({
-            start: weekData.start.replace(/-/g, '/'),
-            end: weekData.end.substring(5).replace(/-/g, '/')
-          });
-        }
-      } catch (err) {
-        console.error('Failed to load employee dashboard data', err);
-      }
-    };
-
-    loadDashboardData();
-  }, []);
+    loadDashboardData(weekOffset);
+  }, [weekOffset]);
 
   const handleSwapRequest = async (rowIdx, colIdx, day, time) => {
     const confirm = window.confirm(`您確定要針對「${day} ${time}」的班次發起換班申請嗎？`);
@@ -96,7 +135,7 @@ export default function EmployeeDashboard() {
       <div className="bg-gradient-to-r from-indigo-600 to-violet-700 p-8 rounded-[40px] text-white shadow-2xl flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden">
         <div className="relative z-10">
           <h2 className="text-3xl font-black mb-2 truncate max-w-[400px]">早安，{currentUser}！</h2>
-          <p className="text-indigo-100 font-medium tracking-wide">本週 ({activeWeek.start} - {activeWeek.end}) 您共有 <span className="text-white font-black underline underline-offset-4 decoration-amber-400">{stats.hours / 2} 個班次</span>，請確認您的行程安排。</p>
+          <p className="text-indigo-100 font-medium tracking-wide">{getWeekLabel(weekOffset)} ({activeWeek.start} - {activeWeek.end}) 您共有 <span className="text-white font-black underline underline-offset-4 decoration-amber-400">{stats.hours / 2} 個班次</span>，請確認您的行程安排。</p>
         </div>
         <div className="flex gap-4 relative z-10">
            <div className="bg-white/10 p-5 rounded-3xl text-center backdrop-blur-md border border-white/10 min-w-[130px]">
@@ -114,10 +153,31 @@ export default function EmployeeDashboard() {
       {/* Grid */}
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-4">
-          <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
-            <Clock className="text-indigo-600" size={24} /> 
-            {viewMode === 'personal' ? '個人排班表 (本週)' : '全體排班表 (本週)'}
-          </h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+              <Clock className="text-indigo-600" size={24} /> 
+              {viewMode === 'personal' ? `個人排班表 (${getWeekLabel(weekOffset)})` : `全體排班表 (${getWeekLabel(weekOffset)})`}
+            </h3>
+            
+            {/* Week Selector Dropdown */}
+            <div className="relative">
+              <select
+                value={weekOffset}
+                onChange={(e) => setWeekOffset(parseInt(e.target.value))}
+                className="bg-gray-50 border border-gray-100 text-slate-800 rounded-2xl py-2.5 pl-4 pr-9 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none cursor-pointer shadow-sm text-xs"
+              >
+                {getWeeksList().map((wk) => (
+                  <option key={wk.offset} value={wk.offset}>
+                    {wk.label}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                <ChevronDown size={14} />
+              </div>
+            </div>
+          </div>
+          
           <div className="bg-black/5 p-1 rounded-2xl flex border border-black/5 backdrop-blur-md">
             <button 
               onClick={() => setViewMode('personal')}
@@ -167,7 +227,7 @@ export default function EmployeeDashboard() {
                               <User size={12} /> {name}
                             </div>
                           ))}
-                          {isMyShift && (
+                          {isMyShift && weekOffset > 0 && (
                             <button 
                               onClick={() => !isImpersonated && handleSwapRequest(rowIdx, colIdx, day, time)}
                               disabled={isImpersonated}

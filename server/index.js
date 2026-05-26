@@ -99,6 +99,103 @@ const formatLocalDate = (dateObj) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+const getWeekRange = (offset = 0) => {
+  const today = new Date();
+  const day = today.getDay(); // 0 is Sunday, 1 is Monday, etc.
+  
+  // Monday of the current week (offset = 0)
+  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+  const currentMonday = new Date(today);
+  currentMonday.setDate(diff);
+
+  const targetMonday = new Date(currentMonday);
+  targetMonday.setDate(currentMonday.getDate() + (offset * 7));
+
+  const targetSunday = new Date(targetMonday);
+  targetSunday.setDate(targetMonday.getDate() + 6);
+
+  return {
+    start: formatLocalDate(targetMonday),
+    end: formatLocalDate(targetSunday),
+    mondayDate: targetMonday
+  };
+};
+
+async function seedMockScheduleForWeek(offset) {
+  try {
+    const { start, end, mondayDate } = getWeekRange(offset);
+    
+    // Check if records already exist
+    const [existing] = await db.query(
+      'SELECT COUNT(*) as count FROM WorkSchedule WHERE schedule_date BETWEEN ? AND ?',
+      [start, end]
+    );
+    
+    if (existing[0].count > 0) {
+      return;
+    }
+
+    console.log(`Seeding mock schedule for week offset ${offset} (${start} - ${end})...`);
+
+    // Get all employees
+    const [employees] = await db.query('SELECT employee_id, name, level, hourly_wage FROM Employee');
+    if (employees.length === 0) {
+      console.log('No employees found. Cannot seed mock schedule.');
+      return;
+    }
+
+    const currentSettings = await getSettingsFromDb();
+
+    await db.query('START TRANSACTION');
+
+    // For each day (0 to 6)
+    for (let colIdx = 0; colIdx < 7; colIdx++) {
+      const targetDate = new Date(mondayDate);
+      targetDate.setDate(mondayDate.getDate() + colIdx);
+      const dateStr = formatLocalDate(targetDate);
+
+      // For each time slot (0 to 7)
+      for (let rowIdx = 0; rowIdx < 8; rowIdx++) {
+        const requiredCount = Array.isArray(currentSettings.staffing) 
+          ? (currentSettings.staffing[rowIdx] !== undefined ? currentSettings.staffing[rowIdx] : 2)
+          : 2;
+
+        // Shuffle employees to pick random ones
+        const shuffled = [...employees].sort(() => 0.5 - Math.random());
+        const assigned = shuffled.slice(0, requiredCount);
+
+        const timeSlot = TIME_SLOTS[rowIdx];
+
+        for (const emp of assigned) {
+          // Insert into WorkSchedule
+          const [wsResult] = await db.query(
+            `INSERT INTO WorkSchedule (employee_id, Employee_num, schedule_date, start_time, end_time)
+             VALUES (?, ?, ?, ?, ?)`,
+            [emp.employee_id, assigned.length, dateStr, timeSlot.start, timeSlot.end]
+          );
+
+          // Calculate wages (2 hours * hourly_wage)
+          const workHours = 2.0;
+          const wage = emp.hourly_wage * workHours;
+
+          // Insert into PayRecord
+          await db.query(
+            `INSERT INTO PayRecord (Work_Schedule_ID, Employee_ID, wage, work_hour, wage_per_hour)
+             VALUES (?, ?, ?, ?, ?)`,
+            [wsResult.insertId, emp.employee_id, wage, workHours, emp.hourly_wage]
+          );
+        }
+      }
+    }
+
+    await db.query('COMMIT');
+    console.log(`Mock schedule for week offset ${offset} seeded successfully.`);
+  } catch (err) {
+    console.error(`Failed to seed mock schedule for offset ${offset}:`, err);
+    try { await db.query('ROLLBACK'); } catch (_) {}
+  }
+}
+
 // Calculate next week's Monday based on current local date
 const getNextWeekMondayDate = () => {
   const today = new Date();
@@ -462,15 +559,17 @@ app.post('/api/availability/:employeeName', async (req, res) => {
 
 // Get current schedule
 app.get('/api/schedule', async (req, res) => {
+  const offset = parseInt(req.query.offset) !== undefined && !isNaN(parseInt(req.query.offset)) ? parseInt(req.query.offset) : 1;
+  const { start, end } = getWeekRange(offset);
   try {
-    // Fetch all schedule records for the active week (getNextMondayStr() to getNextSundayStr())
+    // Fetch all schedule records for the specified week
     const [rows] = await db.query(
       `SELECT ws.Work_Schedule_ID, ws.Employee_num, DATE_FORMAT(ws.schedule_date, '%Y-%m-%d') as schedule_date,
               ws.start_time, ws.end_time, e.name AS employee_name
        FROM WorkSchedule ws
        JOIN Employee e ON ws.employee_id = e.employee_id
        WHERE ws.schedule_date BETWEEN ? AND ?`,
-      [getNextMondayStr(), getNextSundayStr()]
+      [start, end]
     );
 
     // Format schedule into frontend structure: { "rowIdx-colIdx": [name1, name2] }
@@ -505,9 +604,19 @@ app.get('/api/schedule', async (req, res) => {
 // Save current schedule and automatically calculate/save PayRecords in database
 app.post('/api/schedule/save', async (req, res) => {
   let schedule = req.body;
+  let clientOffset = 1;
   if (req.body && req.body.schedule) {
     schedule = req.body.schedule;
+    if (req.body.offset !== undefined) {
+      clientOffset = parseInt(req.body.offset);
+    }
   }
+  
+  if (clientOffset <= 0) {
+    return res.status(403).json({ error: '本週與過去週次的班表為固定狀態，無法修改！' });
+  }
+
+  const { start, end, mondayDate } = getWeekRange(clientOffset);
   
   try {
     // 1. Get all employees mapping name -> { id, level, hourly_wage }
@@ -523,7 +632,7 @@ app.post('/api/schedule/save', async (req, res) => {
     // 2. Find existing WorkSchedule IDs for the active week
     const [existingWS] = await db.query(
       "SELECT Work_Schedule_ID FROM WorkSchedule WHERE schedule_date BETWEEN ? AND ?",
-      [getNextMondayStr(), getNextSundayStr()]
+      [start, end]
     );
     const wsIds = existingWS.map(row => row.Work_Schedule_ID);
 
@@ -535,7 +644,7 @@ app.post('/api/schedule/save', async (req, res) => {
     // 3. Clear existing schedule for the week
     await db.query(
       "DELETE FROM WorkSchedule WHERE schedule_date BETWEEN ? AND ?",
-      [getNextMondayStr(), getNextSundayStr()]
+      [start, end]
     );
 
     // 4. Insert new schedule records & calculate pay records
@@ -551,7 +660,9 @@ app.post('/api/schedule/save', async (req, res) => {
       const timeSlot = TIME_SLOTS[rowIdx];
       if (!timeSlot) continue;
 
-      const dateStr = getWeekDateString(colIdx);
+      const targetDate = new Date(mondayDate);
+      targetDate.setDate(mondayDate.getDate() + colIdx);
+      const dateStr = formatLocalDate(targetDate);
 
       for (const name of names) {
         const emp = empMap[name];
@@ -597,8 +708,10 @@ app.post('/api/schedule/save', async (req, res) => {
 
 
 
-// Get pay records aggregated per employee for the active week
+// Get pay records aggregated per employee for the specified week
 app.get('/api/pay-records', async (req, res) => {
+  const offset = parseInt(req.query.offset) !== undefined && !isNaN(parseInt(req.query.offset)) ? parseInt(req.query.offset) : 1;
+  const { start, end } = getWeekRange(offset);
   try {
     const [rows] = await db.query(
       `SELECT e.employee_id AS id, e.name, e.level, SUM(pr.work_hour) AS hours, e.hourly_wage AS rate, SUM(pr.wage) AS total
@@ -607,7 +720,7 @@ app.get('/api/pay-records', async (req, res) => {
        JOIN WorkSchedule ws ON pr.Work_Schedule_ID = ws.Work_Schedule_ID
        WHERE ws.schedule_date BETWEEN ? AND ?
        GROUP BY e.employee_id, e.name, e.level, e.hourly_wage`,
-      [getNextMondayStr(), getNextSundayStr()]
+      [start, end]
     );
     res.json(rows);
   } catch (error) {
@@ -621,11 +734,13 @@ app.get('/api/settings', async (req, res) => {
   res.json(await getSettingsFromDb());
 });
 
-// Get dynamic active week range
+// Get dynamic week range
 app.get('/api/active-week', (req, res) => {
+  const offset = parseInt(req.query.offset) !== undefined && !isNaN(parseInt(req.query.offset)) ? parseInt(req.query.offset) : 1;
+  const { start, end } = getWeekRange(offset);
   res.json({
-    start: getNextMondayStr(),
-    end: getNextSundayStr()
+    start,
+    end
   });
 });
 
@@ -936,6 +1051,11 @@ async function runMigration() {
       await db.query('COMMIT');
       console.log('Migration completed successfully.');
     }
+
+    // Seed mock schedules for current week, previous week, and previous two weeks
+    await seedMockScheduleForWeek(0);
+    await seedMockScheduleForWeek(-1);
+    await seedMockScheduleForWeek(-2);
   } catch (err) {
     console.error('Migration error:', err);
     try { await db.query('ROLLBACK'); } catch (_) {}

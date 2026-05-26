@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Save, UserPlus, Trash2, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle, X, Calendar } from 'lucide-react';
+import { Sparkles, Save, UserPlus, Trash2, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle, X, Calendar, ChevronDown } from 'lucide-react';
 
 export default function ScheduleManagement() {
   const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
@@ -16,13 +16,14 @@ export default function ScheduleManagement() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activeWeek, setActiveWeek] = useState({ start: '', end: '' });
+  const [weekOffset, setWeekOffset] = useState(1); // Default to 1 (Next Week)
   
   // Selection Modal State
   const [selectionModal, setSelectionModal] = useState({ isOpen: false, slotKey: null, dayIdx: null, rowIdx: null });
 
-  const fetchData = async () => {
+  const fetchData = async (offset = weekOffset) => {
     try {
-      const schedRes = await fetch('/api/schedule');
+      const schedRes = await fetch(`/api/schedule?offset=${offset}`);
       const schedData = await schedRes.json();
       setSchedule(schedData);
 
@@ -39,7 +40,7 @@ export default function ScheduleManagement() {
       const settingsData = await settingsRes.json();
       setSettings(settingsData);
 
-      const weekRes = await fetch('/api/active-week');
+      const weekRes = await fetch(`/api/active-week?offset=${offset}`);
       if (weekRes.ok) {
         const weekData = await weekRes.json();
         setActiveWeek({
@@ -52,10 +53,39 @@ export default function ScheduleManagement() {
     }
   };
 
+  const getWeeksList = () => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    const currentMonday = new Date(today);
+    currentMonday.setDate(diff);
+
+    const list = [];
+    const labels = ['前兩週', '上週', '本週', '下週'];
+    const offsets = [-2, -1, 0, 1];
+
+    offsets.forEach((offset, idx) => {
+      const monday = new Date(currentMonday);
+      monday.setDate(currentMonday.getDate() + (offset * 7));
+      
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+
+      const startStr = `${monday.getFullYear()}/${String(monday.getMonth() + 1).padStart(2, '0')}/${String(monday.getDate()).padStart(2, '0')}`;
+      const endStr = `${sunday.getFullYear()}/${String(sunday.getMonth() + 1).padStart(2, '0')}/${String(sunday.getDate()).padStart(2, '0')}`;
+
+      list.push({
+        offset,
+        label: `${labels[idx]}班表 (${startStr} - ${endStr})`
+      });
+    });
+
+    return list;
+  };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(weekOffset);
+  }, [weekOffset]);
 
   const handleAutoGenerate = () => {
     if (employees.length === 0) {
@@ -152,14 +182,20 @@ export default function ScheduleManagement() {
       const res = await fetch('/api/schedule/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(schedule)
+        body: JSON.stringify({
+          schedule: schedule,
+          offset: weekOffset
+        })
       });
-      if (!res.ok) throw new Error('Failed to save schedule');
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to save schedule');
+      }
       setHasUnsavedChanges(false);
       alert('班表已儲存至資料庫！');
     } catch (err) {
       console.error(err);
-      alert('儲存失敗，請稍後再試！');
+      alert(err.message || '儲存失敗，請稍後再試！');
     }
   };
 
@@ -200,29 +236,62 @@ export default function ScheduleManagement() {
     <div className="space-y-8 animate-in fade-in duration-500 relative">
       {/* Header */}
       <div className="bg-white p-8 rounded-[40px] shadow-xl border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-6">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">智慧排班系統</h2>
-          <p className="text-xs font-bold text-indigo-500 mt-1.5 uppercase tracking-widest flex items-center gap-1.5">
-             <Calendar size={12} /> 排班週次：{activeWeek.start} - {activeWeek.end}
-          </p>
-          {hasUnsavedChanges && <p className="text-amber-500 text-[10px] font-black mt-1 uppercase tracking-widest">● Detected Unsaved Changes</p>}
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">智慧排班系統</h2>
+            <p className="text-xs font-bold text-indigo-500 mt-1.5 uppercase tracking-widest flex items-center gap-1.5">
+               <Calendar size={12} /> 排班週次：{activeWeek.start} - {activeWeek.end}
+            </p>
+            {hasUnsavedChanges && <p className="text-amber-500 text-[10px] font-black mt-1 uppercase tracking-widest">● Detected Unsaved Changes</p>}
+          </div>
+          
+          {/* Week Selector Dropdown */}
+          <div className="relative">
+            <select
+              value={weekOffset}
+              onChange={(e) => {
+                setWeekOffset(parseInt(e.target.value));
+                setHasUnsavedChanges(false);
+              }}
+              className="bg-gray-50 border border-gray-100 text-slate-800 rounded-2xl py-3 pl-5 pr-10 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none cursor-pointer shadow-sm text-xs"
+            >
+              {getWeeksList().map((wk) => (
+                <option key={wk.offset} value={wk.offset}>
+                  {wk.label}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+              <ChevronDown size={14} />
+            </div>
+          </div>
         </div>
+
         <div className="flex gap-4">
-          <button 
-            onClick={handleAutoGenerate}
-            disabled={isGenerating}
-            className="flex items-center gap-3 bg-white border-2 border-indigo-600 text-indigo-600 px-8 py-4 rounded-[24px] font-black hover:bg-indigo-50 transition-all disabled:opacity-50"
-          >
-            <Sparkles size={20} />
-            {isGenerating ? '計算中...' : '自動產生'}
-          </button>
-          <button 
-            onClick={saveToStorage}
-            className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-4 rounded-[24px] font-black shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 active:scale-95 transition-all"
-          >
-            <Save size={20} />
-            儲存班表
-          </button>
+          {weekOffset <= 0 ? (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-600 px-6 py-4 rounded-[24px] font-bold text-xs shadow-inner">
+              <AlertCircle size={18} />
+              <span>本週與過去週次的班表為唯讀狀態 (不可修改)</span>
+            </div>
+          ) : (
+            <>
+              <button 
+                onClick={handleAutoGenerate}
+                disabled={isGenerating}
+                className="flex items-center gap-3 bg-white border-2 border-indigo-600 text-indigo-600 px-8 py-4 rounded-[24px] font-black hover:bg-indigo-50 transition-all disabled:opacity-50"
+              >
+                <Sparkles size={20} />
+                {isGenerating ? '計算中...' : '自動產生'}
+              </button>
+              <button 
+                onClick={saveToStorage}
+                className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-4 rounded-[24px] font-black shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 active:scale-95 transition-all"
+              >
+                <Save size={20} />
+                儲存班表
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -248,15 +317,21 @@ export default function ScheduleManagement() {
                       {emps.map(name => (
                         <div key={name} className="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-gray-100 shadow-sm group/tag hover:border-indigo-200 transition-all">
                           <span className="text-[11px] font-bold text-slate-700">{name}</span>
-                          <button onClick={() => removeEmployee(key, name)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover/tag:opacity-100 transition-all"><Trash2 size={12} /></button>
+                          {weekOffset > 0 && (
+                            <button onClick={() => removeEmployee(key, name)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover/tag:opacity-100 transition-all">
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                       ))}
-                      <button 
-                        onClick={() => openSelectionModal(key, rowIdx, colIdx)} 
-                        className="mt-auto py-2 rounded-xl border border-dashed border-gray-200 text-gray-400 hover:border-indigo-400 hover:text-indigo-600 text-[10px] font-bold opacity-0 group-hover/cell:opacity-100 transition-all"
-                      >
-                        + 排入員工
-                      </button>
+                      {weekOffset > 0 && (
+                        <button 
+                          onClick={() => openSelectionModal(key, rowIdx, colIdx)} 
+                          className="mt-auto py-2 rounded-xl border border-dashed border-gray-200 text-gray-400 hover:border-indigo-400 hover:text-indigo-600 text-[10px] font-bold opacity-0 group-hover/cell:opacity-100 transition-all"
+                        >
+                          + 排入員工
+                        </button>
+                      )}
                     </div>
                   );
                 })}
