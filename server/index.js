@@ -9,7 +9,33 @@ const port = process.env.PORT || 5000;
 
 const settingsFilePath = path.join(__dirname, 'db/settings.json');
 
-function getSettings() {
+async function getSettingsFromDb() {
+  try {
+    const [rows] = await db.query('SELECT setting_key, setting_value FROM ScheduleSource');
+    if (rows.length > 0) {
+      const settings = {
+        wages: { junior: 200, senior: 220 },
+        staffing: { morning: 2, afternoon: 1, evening: 2 },
+        constraints: { maxHours: 20, consecutiveShiftsAllowed: false, seniorRequiredPerShift: true }
+      };
+      rows.forEach(row => {
+        const val = row.setting_value;
+        if (row.setting_key === 'wages_junior') settings.wages.junior = parseInt(val);
+        else if (row.setting_key === 'wages_senior') settings.wages.senior = parseInt(val);
+        else if (row.setting_key === 'staffing_morning') settings.staffing.morning = parseInt(val);
+        else if (row.setting_key === 'staffing_afternoon') settings.staffing.afternoon = parseInt(val);
+        else if (row.setting_key === 'staffing_evening') settings.staffing.evening = parseInt(val);
+        else if (row.setting_key === 'constraints_maxHours') settings.constraints.maxHours = parseInt(val);
+        else if (row.setting_key === 'constraints_consecutiveShiftsAllowed') settings.constraints.consecutiveShiftsAllowed = (val === 'true');
+        else if (row.setting_key === 'constraints_seniorRequiredPerShift') settings.constraints.seniorRequiredPerShift = (val === 'true');
+      });
+      return settings;
+    }
+  } catch (e) {
+    console.error('Error reading settings from DB', e);
+  }
+  
+  // Fallback to local settings.json file
   try {
     if (fs.existsSync(settingsFilePath)) {
       return JSON.parse(fs.readFileSync(settingsFilePath, 'utf8'));
@@ -23,6 +49,7 @@ function getSettings() {
     constraints: { maxHours: 20, consecutiveShiftsAllowed: false, seniorRequiredPerShift: true }
   };
 }
+
 
 app.use(cors());
 app.use(express.json());
@@ -139,8 +166,9 @@ app.post('/api/employees', async (req, res) => {
   const joinDate = new Date().toISOString().split('T')[0];
   
   // Resolve default hourly wage from system settings
-  const currentSettings = getSettings();
+  const currentSettings = await getSettingsFromDb();
   const defaultWage = level === 'senior' ? currentSettings.wages.senior : currentSettings.wages.junior;
+
   const finalWage = (hourlyWage !== undefined && hourlyWage !== null && hourlyWage !== '') ? parseInt(hourlyWage) : defaultWage;
 
   try {
@@ -352,54 +380,11 @@ app.get('/api/schedule', async (req, res) => {
   }
 });
 
-// Get sources for current schedule
-app.get('/api/schedule/sources', async (req, res) => {
-  try {
-    const [rows] = await db.query(
-      `SELECT ws.Work_Schedule_ID, DATE_FORMAT(ws.schedule_date, '%Y-%m-%d') as schedule_date,
-              ws.start_time, ss.source_type
-       FROM WorkSchedule ws
-       LEFT JOIN ScheduleSource ss ON ws.Work_Schedule_ID = ss.Work_Schedule_ID
-       WHERE ws.schedule_date BETWEEN ? AND ?`,
-      [getNextMondayStr(), getNextSundayStr()]
-    );
-
-    const sources = {};
-    rows.forEach(item => {
-      const colIdx = getDayColIdxFromDate(item.schedule_date);
-      const startTimeStr = item.start_time;
-      const rowIdx = TIME_SLOTS.findIndex(slot => slot.start === startTimeStr);
-
-      if (colIdx !== -1 && rowIdx !== -1) {
-        const key = `${rowIdx}-${colIdx}`;
-        const current = sources[key];
-        const incoming = item.source_type || 'auto';
-        if (!current) {
-          sources[key] = incoming;
-        } else if (incoming === 'manual' || current === 'manual') {
-          sources[key] = 'manual';
-        } else if (incoming === 'swap' || current === 'swap') {
-          sources[key] = 'swap';
-        }
-      }
-    });
-
-    res.json(sources);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to get schedule sources' });
-  }
-});
-
-
 // Save current schedule and automatically calculate/save PayRecords in database
 app.post('/api/schedule/save', async (req, res) => {
   let schedule = req.body;
-  let sources = {};
-
   if (req.body && req.body.schedule) {
     schedule = req.body.schedule;
-    sources = req.body.sources || {};
   }
   
   try {
@@ -461,14 +446,6 @@ app.post('/api/schedule/save', async (req, res) => {
         );
         const newWsId = wsResult.insertId;
 
-        // Insert into ScheduleSource
-        const sourceType = sources[key] || 'manual';
-        await db.query(
-          `INSERT INTO ScheduleSource (Work_Schedule_ID, source_type)
-           VALUES (?, ?)`,
-          [newWsId, sourceType]
-        );
-
         // Calculate pay record based on individual employee's hourly wage
         const wagePerHour = emp.hourly_wage || 200;
         const workHours = 2.0; // Each time slot represents 2 hours
@@ -497,6 +474,7 @@ app.post('/api/schedule/save', async (req, res) => {
 });
 
 
+
 // Get pay records aggregated per employee for the active week
 app.get('/api/pay-records', async (req, res) => {
   try {
@@ -517,8 +495,8 @@ app.get('/api/pay-records', async (req, res) => {
 });
 
 // Get settings configuration
-app.get('/api/settings', (req, res) => {
-  res.json(getSettings());
+app.get('/api/settings', async (req, res) => {
+  res.json(await getSettingsFromDb());
 });
 
 // Get dynamic active week range
@@ -531,11 +509,36 @@ app.get('/api/active-week', (req, res) => {
 
 // Update settings configuration and sync employee wages
 app.post('/api/settings', async (req, res) => {
+  const { wages, staffing, constraints } = req.body;
   try {
-    fs.writeFileSync(settingsFilePath, JSON.stringify(req.body, null, 2), 'utf8');
+    const queries = [];
+    if (wages) {
+      if (wages.junior !== undefined) queries.push(['wages_junior', wages.junior.toString()]);
+      if (wages.senior !== undefined) queries.push(['wages_senior', wages.senior.toString()]);
+    }
+    if (staffing) {
+      if (staffing.morning !== undefined) queries.push(['staffing_morning', staffing.morning.toString()]);
+      if (staffing.afternoon !== undefined) queries.push(['staffing_afternoon', staffing.afternoon.toString()]);
+      if (staffing.evening !== undefined) queries.push(['staffing_evening', staffing.evening.toString()]);
+    }
+    if (constraints) {
+      if (constraints.maxHours !== undefined) queries.push(['constraints_maxHours', constraints.maxHours.toString()]);
+      if (constraints.consecutiveShiftsAllowed !== undefined) queries.push(['constraints_consecutiveShiftsAllowed', constraints.consecutiveShiftsAllowed.toString()]);
+      if (constraints.seniorRequiredPerShift !== undefined) queries.push(['constraints_seniorRequiredPerShift', constraints.seniorRequiredPerShift.toString()]);
+    }
+
+    // Start a transaction to ensure atomic updates
+    await db.query('START TRANSACTION');
+    for (const [key, val] of queries) {
+      await db.query(
+        `INSERT INTO ScheduleSource (setting_key, setting_value)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE setting_value = ?`,
+        [key, val, val]
+      );
+    }
 
     // Sync settings wages to all employees of the respective levels
-    const { wages } = req.body;
     if (wages) {
       const { junior, senior } = wages;
       if (junior !== undefined) {
@@ -545,10 +548,23 @@ app.post('/api/settings', async (req, res) => {
         await db.query("UPDATE Employee SET hourly_wage = ? WHERE level = 'senior'", [senior]);
       }
     }
+    await db.query('COMMIT');
+
+    // Also update settings.json as a cache/backup so nothing else breaks
+    try {
+      fs.writeFileSync(settingsFilePath, JSON.stringify(req.body, null, 2), 'utf8');
+    } catch (fsErr) {
+      console.error('Failed to write settings cache file', fsErr);
+    }
 
     res.json({ message: 'Settings saved successfully' });
   } catch (error) {
     console.error('Failed to save settings:', error);
+    try {
+      await db.query('ROLLBACK');
+    } catch (rbErr) {
+      console.error('Rollback failed:', rbErr);
+    }
     res.status(500).json({ error: 'Failed to save settings' });
   }
 });
@@ -711,13 +727,6 @@ app.post('/api/swaps/approve', async (req, res) => {
       [requestId]
     );
 
-    // Update ScheduleSource to 'swap'
-    await db.query(
-      `INSERT INTO ScheduleSource (Work_Schedule_ID, source_type)
-       VALUES (?, 'swap')
-       ON DUPLICATE KEY UPDATE source_type = 'swap'`,
-      [wsId]
-    );
 
 
     await db.query('COMMIT');

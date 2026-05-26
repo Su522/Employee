@@ -75,9 +75,8 @@ CREATE TABLE IF NOT EXISTS swapRequest (
   FOREIGN KEY (request_target) REFERENCES WorkSchedule(Work_Schedule_ID) ON DELETE CASCADE
 );
 
--- ScheduleSource
+-- ScheduleSource (Stores Scheduling Constraints / System settings)
 CREATE TABLE IF NOT EXISTS ScheduleSource (
-  Work_Schedule_ID INT PRIMARY KEY,
-  source_type ENUM('auto','manual','swap') NOT NULL,
-  FOREIGN KEY (Work_Schedule_ID) REFERENCES WorkSchedule(Work_Schedule_ID) ON DELETE CASCADE
+  setting_key VARCHAR(50) PRIMARY KEY,
+  setting_value VARCHAR(255) NOT NULL
 );

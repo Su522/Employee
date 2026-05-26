@@ -7,7 +7,6 @@ export default function EmployeeDashboard() {
   const timeSlots = ['08:00 - 10:00', '10:00 - 12:00', '12:00 - 14:00', '14:00 - 16:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00', '22:00 - 00:00'];
 
   const [schedule, setSchedule] = useState({});
-  const [sources, setSources] = useState({});
   const [stats, setStats] = useState({ hours: 0, pay: 0 });
   const [isImpersonated, setIsImpersonated] = useState(false);
   const [viewMode, setViewMode] = useState('personal'); // 'personal' or 'all'
@@ -25,15 +24,8 @@ export default function EmployeeDashboard() {
         const schedData = await schedRes.json();
         setSchedule(schedData);
 
-        // Fetch sources
-        const sourcesRes = await fetch('/api/schedule/sources');
-        if (sourcesRes.ok) {
-          const sourcesData = await sourcesRes.json();
-          setSources(sourcesData);
-        }
-
-
         // 2. Fetch employees to calculate pay
+
         const empRes = await fetch('/api/employees');
         const empData = await empRes.json();
 
@@ -168,40 +160,28 @@ export default function EmployeeDashboard() {
                       );
                     }
 
-                    const source = sources[key];
-                    return (
-                      <div key={key} className={`p-3 min-h-[140px] border-r border-gray-50 flex flex-col gap-2 transition-all ${isMyShift ? 'bg-indigo-600 shadow-inner' : 'bg-white hover:bg-indigo-50/20'}`}>
-                        {emps.length > 0 && source && (
-                          <span className={`self-start text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg border ${
-                            isMyShift
-                              ? 'bg-white/25 text-white border-white/20'
-                              : source === 'auto' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
-                                source === 'swap' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                'bg-amber-50 text-amber-600 border-amber-100'
-                          }`}>
-                            {source === 'auto' ? '系統自動' : source === 'swap' ? '換班代班' : '手動微調'}
-                          </span>
-                        )}
-                        {emps.map(name => (
-                          <div key={name} className={`flex items-center gap-2 px-2 py-2 rounded-xl text-[11px] font-bold ${isMyShift && name === currentUser ? 'bg-white/20 text-white' : 'bg-slate-50 text-slate-600 border border-slate-100'}`}>
-                            <User size={12} /> {name}
-                          </div>
-                        ))}
-                        {isMyShift && (
-                          <button 
-                            onClick={() => !isImpersonated && handleSwapRequest(rowIdx, colIdx, day, time)}
-                            disabled={isImpersonated}
-                            className={`mt-auto py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg transition-all ${
-                              isImpersonated
-                                ? 'bg-indigo-400/50 text-white/50 cursor-not-allowed shadow-none'
-                                : 'bg-white text-indigo-600 hover:scale-105 active:scale-95'
-                            }`}
-                          >
-                            {isImpersonated ? '檢視中' : '申請換班'}
-                          </button>
-                        )}
-                      </div>
-                    );
+                      return (
+                        <div key={key} className={`p-3 min-h-[140px] border-r border-gray-50 flex flex-col gap-2 transition-all ${isMyShift ? 'bg-indigo-600 shadow-inner' : 'bg-white hover:bg-indigo-50/20'}`}>
+                          {emps.map(name => (
+                            <div key={name} className={`flex items-center gap-2 px-2 py-2 rounded-xl text-[11px] font-bold ${isMyShift && name === currentUser ? 'bg-white/20 text-white' : 'bg-slate-50 text-slate-600 border border-slate-100'}`}>
+                              <User size={12} /> {name}
+                            </div>
+                          ))}
+                          {isMyShift && (
+                            <button 
+                              onClick={() => !isImpersonated && handleSwapRequest(rowIdx, colIdx, day, time)}
+                              disabled={isImpersonated}
+                              className={`mt-auto py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg transition-all ${
+                                isImpersonated
+                                  ? 'bg-indigo-400/50 text-white/50 cursor-not-allowed shadow-none'
+                                  : 'bg-white text-indigo-600 hover:scale-105 active:scale-95'
+                              }`}
+                            >
+                              {isImpersonated ? '檢視中' : '申請換班'}
+                            </button>
+                          )}
+                        </div>
+                      );
                   })}
                 </div>
               ))}

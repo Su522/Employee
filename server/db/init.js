@@ -45,6 +45,26 @@ async function init() {
     console.log('Employee table is not empty. Skipping seed data.');
   }
 
+  // 3. Seed default settings into ScheduleSource if empty
+  const [settingRows] = await connection.query('SELECT COUNT(*) as count FROM ScheduleSource');
+  if (settingRows[0].count === 0) {
+    console.log('Seeding default settings into ScheduleSource...');
+    await connection.query(`
+      INSERT INTO ScheduleSource (setting_key, setting_value) VALUES
+      ('wages_junior', '200'),
+      ('wages_senior', '220'),
+      ('staffing_morning', '2'),
+      ('staffing_afternoon', '1'),
+      ('staffing_evening', '2'),
+      ('constraints_maxHours', '20'),
+      ('constraints_consecutiveShiftsAllowed', 'false'),
+      ('constraints_seniorRequiredPerShift', 'true');
+    `);
+    console.log('Default settings seeded successfully.');
+  } else {
+    console.log('ScheduleSource settings table is not empty. Skipping seed data.');
+  }
+
   await connection.end();
   console.log('Database initialization completed successfully!');
 }
