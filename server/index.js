@@ -324,15 +324,26 @@ app.get('/api/availability', async (req, res) => {
     availRows.forEach(row => {
       const name = row.employee_name;
       if (!result[name]) {
-        result[name] = Array.from({ length: 14 }, () => Array(7).fill(false));
+        result[name] = Array.from({ length: 8 }, () => Array(7).fill(false));
       }
       if (row.status === 'available') {
         const dayIdx = DAYS_MAP.indexOf(row.day_of_week);
         if (dayIdx !== -1) {
-          const rowsToFill = SHIFTS[row.shift] || [];
-          rowsToFill.forEach(rIdx => {
-            result[name][rIdx][dayIdx] = true;
-          });
+          if (row.shift.startsWith('slot_')) {
+            const rIdx = parseInt(row.shift.replace('slot_', ''));
+            if (rIdx >= 0 && rIdx < 8) {
+              result[name][rIdx][dayIdx] = true;
+            }
+          } else {
+            // Legacy compatibility mapping
+            const legacyRows = SHIFTS[row.shift] || [];
+            legacyRows.forEach(lIdx => {
+              const rIdx = Math.floor(lIdx / 2);
+              if (rIdx >= 0 && rIdx < 8) {
+                result[name][rIdx][dayIdx] = true;
+              }
+            });
+          }
         }
       }
     });
@@ -351,7 +362,7 @@ app.get('/api/availability/:employeeName', async (req, res) => {
     // 1. Find employee_id
     const [employees] = await db.query('SELECT employee_id FROM Employee WHERE name = ?', [employeeName]);
     if (employees.length === 0) {
-      return res.json(Array.from({ length: 14 }, () => Array(7).fill(false)));
+      return res.json(Array.from({ length: 8 }, () => Array(7).fill(false)));
     }
     const empId = employees[0].employee_id;
 
@@ -361,17 +372,28 @@ app.get('/api/availability/:employeeName', async (req, res) => {
       [empId]
     );
 
-    // 3. Construct 14x7 grid
-    const grid = Array.from({ length: 14 }, () => Array(7).fill(false));
+    // 3. Construct 8x7 grid
+    const grid = Array.from({ length: 8 }, () => Array(7).fill(false));
 
     availRows.forEach(row => {
       if (row.status === 'available') {
         const dayIdx = DAYS_MAP.indexOf(row.day_of_week);
         if (dayIdx !== -1) {
-          const rowsToFill = SHIFTS[row.shift] || [];
-          rowsToFill.forEach(rIdx => {
-            grid[rIdx][dayIdx] = true;
-          });
+          if (row.shift.startsWith('slot_')) {
+            const rIdx = parseInt(row.shift.replace('slot_', ''));
+            if (rIdx >= 0 && rIdx < 8) {
+              grid[rIdx][dayIdx] = true;
+            }
+          } else {
+            // Legacy compatibility mapping
+            const legacyRows = SHIFTS[row.shift] || [];
+            legacyRows.forEach(lIdx => {
+              const rIdx = Math.floor(lIdx / 2);
+              if (rIdx >= 0 && rIdx < 8) {
+                grid[rIdx][dayIdx] = true;
+              }
+            });
+          }
         }
       }
     });
@@ -386,8 +408,8 @@ app.get('/api/availability/:employeeName', async (req, res) => {
 // Save availability grid for an employee
 app.post('/api/availability/:employeeName', async (req, res) => {
   const { employeeName } = req.params;
-  const grid = req.body; // 14x7 array
-  if (!Array.isArray(grid) || grid.length !== 14) {
+  const grid = req.body; // 8x7 array
+  if (!Array.isArray(grid) || grid.length !== 8) {
     return res.status(400).json({ error: 'Invalid grid data' });
   }
 
@@ -399,30 +421,36 @@ app.post('/api/availability/:employeeName', async (req, res) => {
     }
     const empId = employees[0].employee_id;
 
-    // 2. Process grid to find availability for morning, afternoon, evening shifts
+    // Start transaction
+    await db.query('START TRANSACTION');
+
+    // Clean up existing entries for this employee
+    await db.query('DELETE FROM Availability WHERE Employee_ID = ?', [empId]);
+
     // For each of the 7 days (columns)
     for (let col = 0; col < 7; col++) {
       const dayName = DAYS_MAP[col];
       
-      // Check each shift
-      for (const [shiftName, rowIndices] of Object.entries(SHIFTS)) {
-        // If at least one hour block is checked (true), then this shift is available
-        const isAvailable = rowIndices.some(rIdx => grid[rIdx] && grid[rIdx][col]);
+      // Check each slot
+      for (let row = 0; row < 8; row++) {
+        const isAvailable = grid[row] && grid[row][col];
         const statusValue = isAvailable ? 'available' : 'unavailable';
+        const shiftName = `slot_${row}`;
 
-        // 3. UPSERT into Availability table
+        // INSERT into Availability table
         await db.query(
           `INSERT INTO Availability (Employee_ID, day_of_week, shift, status)
-           VALUES (?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE status = ?`,
-          [empId, dayName, shiftName, statusValue, statusValue]
+           VALUES (?, ?, ?, ?)`,
+          [empId, dayName, shiftName, statusValue]
         );
       }
     }
 
+    await db.query('COMMIT');
     res.json({ message: 'Availability saved successfully' });
   } catch (error) {
     console.error(error);
+    try { await db.query('ROLLBACK'); } catch (_) {}
     res.status(500).json({ error: 'Failed to save availability' });
   }
 });
@@ -863,6 +891,10 @@ app.post('/api/swaps/reject', async (req, res) => {
 
 async function runMigration() {
   try {
+    // Ensure Availability.shift column is VARCHAR(50) instead of ENUM
+    console.log('Ensuring Availability.shift column is VARCHAR(50)...');
+    await db.query('ALTER TABLE Availability MODIFY COLUMN shift VARCHAR(50) NOT NULL');
+
     const [rows] = await db.query('SELECT setting_key, setting_value FROM ScheduleSource');
     const keys = rows.map(r => r.setting_key);
     

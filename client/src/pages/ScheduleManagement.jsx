@@ -75,13 +75,7 @@ export default function ScheduleManagement() {
       const isFree = (empName, rowIdx, colIdx) => {
         const empAvail = allAvailabilities[empName];
         if (!empAvail) return true; // 預設無設定可用時段時視為有空，保障全新系統可正常排班
-        const startRow = rowIdx * 2;
-        const endRow = Math.min(13, startRow + 1);
-        let freeCount = 0;
-        for (let r = startRow; r <= endRow; r++) {
-          if (empAvail[r] && empAvail[r][colIdx]) freeCount++;
-        }
-        return freeCount >= 1;
+        return empAvail[rowIdx] && empAvail[rowIdx][colIdx] === true;
       };
 
       // Helper to get staffing requirement
@@ -199,17 +193,7 @@ export default function ScheduleManagement() {
   const checkAvailability = (empName, rowIdx, dayIdx) => {
     const empAvail = allAvailabilities[empName];
     if (!empAvail) return 'unknown';
-    
-    // Check the corresponding 2 hours in the 1-hour grid
-    const startRow = rowIdx * 2;
-    const endRow = Math.min(13, startRow + 1);
-    
-    let freeCount = 0;
-    for(let r = startRow; r <= endRow; r++) {
-      if (empAvail[r] && empAvail[r][dayIdx]) freeCount++;
-    }
-    
-    return freeCount >= 1 ? 'free' : 'busy'; // If at least 1 hour in the 2-hour block is free
+    return empAvail[rowIdx] && empAvail[rowIdx][dayIdx] ? 'free' : 'busy';
   };
 
   return (

@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS CourseSchedule (
 CREATE TABLE IF NOT EXISTS Availability (
   Employee_ID INT NOT NULL,
   day_of_week ENUM('Mon','Tue','Wed','Thu','Fri','Sat','Sun') NOT NULL,
-  shift ENUM('morning','afternoon','evening') NOT NULL,
+  shift VARCHAR(50) NOT NULL,
   status ENUM('available','unavailable') DEFAULT 'available',
   PRIMARY KEY (Employee_ID, day_of_week, shift),
   FOREIGN KEY (Employee_ID) REFERENCES Employee(employee_id) ON DELETE CASCADE

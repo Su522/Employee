@@ -3,14 +3,23 @@ import { Save, Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, Check
 
 export default function AvailabilitySetting() {
   const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
-  const timeSlots = Array.from({ length: 14 }, (_, i) => `${i + 8}:00`);
+  const timeSlots = [
+    '08:00 - 10:00',
+    '10:00 - 12:00',
+    '12:00 - 14:00',
+    '14:00 - 16:00',
+    '16:00 - 18:00',
+    '18:00 - 20:00',
+    '20:00 - 22:00',
+    '22:00 - 00:00'
+  ];
 
   // Get dynamic user from session
   const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
   const currentUser = auth.name;
   const isImpersonated = auth.isImpersonated;
 
-  const [grid, setGrid] = useState(Array.from({ length: 14 }, () => Array(7).fill(false)));
+  const [grid, setGrid] = useState(Array.from({ length: 8 }, () => Array(7).fill(false)));
   const [isDragging, setIsDragging] = useState(false);
   const [dragValue, setDragValue] = useState(null);
 
