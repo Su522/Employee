@@ -8,17 +8,39 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     
-    // Save user info to session
-    const userInfo = { name: username, role: role };
-    sessionStorage.setItem('auth_user', JSON.stringify(userInfo));
-
     if (role === 'admin') {
-      navigate('/admin');
+      // Validate Admin credentials
+      if (username === '管理員' && password === 'admin') {
+        const userInfo = { name: username, role: role };
+        sessionStorage.setItem('auth_user', JSON.stringify(userInfo));
+        navigate('/admin');
+      } else {
+        alert('管理者帳號或密碼錯誤！（預設帳號：管理員，密碼：admin）');
+      }
     } else {
-      navigate('/employee');
+      // Validate Employee existence in MySQL
+      try {
+        const res = await fetch('/api/employees');
+        if (res.ok) {
+          const employees = await res.json();
+          const found = employees.find(emp => emp.name.trim() === username.trim());
+          if (found) {
+            const userInfo = { name: found.name, role: role };
+            sessionStorage.setItem('auth_user', JSON.stringify(userInfo));
+            navigate('/employee');
+          } else {
+            alert('登入失敗：查無此員工姓名，請確認輸入姓名是否正確！');
+          }
+        } else {
+          alert('系統連線失敗，請稍後再試。');
+        }
+      } catch (err) {
+        console.error('Failed to validate employee login:', err);
+        alert('系統連線失敗，請稍後再試。');
+      }
     }
   };
 

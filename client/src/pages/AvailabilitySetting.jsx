@@ -10,16 +10,27 @@ export default function AvailabilitySetting() {
   const currentUser = auth.name;
   const isImpersonated = auth.isImpersonated;
 
-  const [grid, setGrid] = useState(() => {
-    const saved = localStorage.getItem(`availability_${currentUser}`);
-    return saved ? JSON.parse(saved) : Array.from({ length: 14 }, () => Array(7).fill(false));
-  });
-
+  const [grid, setGrid] = useState(Array.from({ length: 14 }, () => Array(7).fill(false)));
   const [isDragging, setIsDragging] = useState(false);
   const [dragValue, setDragValue] = useState(null);
 
+  const fetchAvailability = async () => {
+    try {
+      const res = await fetch(`/api/availability/${encodeURIComponent(currentUser)}`);
+      const data = await res.json();
+      setGrid(data);
+    } catch (err) {
+      console.error('Failed to fetch availability', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchAvailability();
+  }, [currentUser]);
+
   const toggleSlot = (row, col) => {
     const newGrid = [...grid];
+    newGrid[row] = [...newGrid[row]];
     newGrid[row][col] = !newGrid[row][col];
     setGrid(newGrid);
   };
@@ -34,14 +45,25 @@ export default function AvailabilitySetting() {
   const handleMouseEnter = (row, col) => {
     if (isDragging) {
       const newGrid = [...grid];
+      newGrid[row] = [...newGrid[row]];
       newGrid[row][col] = dragValue;
       setGrid(newGrid);
     }
   };
 
-  const saveAvailability = () => {
-    localStorage.setItem(`availability_${currentUser}`, JSON.stringify(grid));
-    alert('可用時段已成功儲存！');
+  const saveAvailability = async () => {
+    try {
+      const res = await fetch(`/api/availability/${encodeURIComponent(currentUser)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(grid)
+      });
+      if (!res.ok) throw new Error('Failed to save availability');
+      alert('可用時段已成功儲存至資料庫！');
+    } catch (err) {
+      console.error(err);
+      alert('儲存失敗，請稍後再試！');
+    }
   };
 
   return (

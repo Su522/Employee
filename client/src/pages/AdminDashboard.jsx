@@ -17,24 +17,28 @@ export default function AdminDashboard() {
   ];
 
   useEffect(() => {
-    const checkNotifications = () => {
+    const checkNotifications = async () => {
       const newNotifs = [];
       
       // 1. Check pending swaps
-      const savedSwaps = localStorage.getItem('swap_requests');
-      if (savedSwaps) {
-        const swaps = JSON.parse(savedSwaps);
-        const pendingCount = swaps.filter(s => s.status === 'waiting_admin').length;
-        if (pendingCount > 0) {
-          newNotifs.push({
-            id: 'swaps',
-            type: 'alert',
-            title: '換班申請待處理',
-            message: `目前有 ${pendingCount} 筆已達成共識的換班申請等待您的核准。`,
-            link: '/admin/swaps',
-            icon: <ArrowLeftRight size={16} />
-          });
+      try {
+        const res = await fetch('/api/swaps');
+        if (res.ok) {
+          const swaps = await res.json();
+          const pendingCount = swaps.filter(s => s.status === 'waiting_admin').length;
+          if (pendingCount > 0) {
+            newNotifs.push({
+              id: 'swaps',
+              type: 'alert',
+              title: '換班申請待處理',
+              message: `目前有 ${pendingCount} 筆已達成共識的換班申請等待您的核准。`,
+              link: '/admin/swaps',
+              icon: <ArrowLeftRight size={16} />
+            });
+          }
         }
+      } catch (err) {
+        console.error('Failed to check swaps for notifications:', err);
       }
 
       // 2. Check if it's Friday for scheduling reminder

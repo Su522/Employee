@@ -2,44 +2,43 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, Clock, ArrowLeftRight, User, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function SwapApproval() {
-  const [requests, setRequests] = useState(() => {
-    const saved = localStorage.getItem('swap_requests');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [requests, setRequests] = useState([]);
 
-  const handleAction = (id, newStatus) => {
-    const updated = requests.map(req => {
-      if (req.id === id) {
-        if (newStatus === 'approved') {
-          updateGlobalSchedule(req);
-        }
-        return { ...req, status: newStatus };
+  const fetchSwapRequests = async () => {
+    try {
+      const res = await fetch('/api/swaps');
+      if (res.ok) {
+        const data = await res.json();
+        setRequests(data);
       }
-      return req;
-    });
-    setRequests(updated);
-    localStorage.setItem('swap_requests', JSON.stringify(updated));
-    alert(`換班申請已標記為：${newStatus === 'approved' ? '已核准' : '已拒絕'}`);
+    } catch (err) {
+      console.error('Failed to fetch swap requests:', err);
+    }
   };
 
-  // Logic to actually swap names in the main schedule
-  const updateGlobalSchedule = (request) => {
-    const saved = localStorage.getItem('current_schedule');
-    if (!saved) return;
-    const schedule = JSON.parse(saved);
-    
-    // Find the slot by parsing the shift string (e.g., "週一 08:00 - 12:00")
-    // For demo simplicity, we'll find where the requester is in any slot
-    const newSchedule = { ...schedule };
-    Object.keys(newSchedule).forEach(key => {
-      const emps = newSchedule[key];
-      if (emps.includes(request.requester)) {
-        // Need to match the shift string to the grid key to be precise
-        // But for this prototype, we'll assume the request shift matches
-        newSchedule[key] = emps.map(name => name === request.requester ? request.helper : name);
+  useEffect(() => {
+    fetchSwapRequests();
+  }, []);
+
+  const handleAction = async (id, newStatus) => {
+    try {
+      const url = newStatus === 'approved' ? '/api/swaps/approve' : '/api/swaps/reject';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: id })
+      });
+      if (res.ok) {
+        alert(`換班申請已標記為：${newStatus === 'approved' ? '已核准' : '已拒絕'}`);
+        fetchSwapRequests();
+      } else {
+        const data = await res.json();
+        alert(`審核失敗：${data.error || '未知錯誤'}`);
       }
-    });
-    localStorage.setItem('current_schedule', JSON.stringify(newSchedule));
+    } catch (err) {
+      console.error(err);
+      alert('操作失敗，請稍後再試。');
+    }
   };
 
   return (

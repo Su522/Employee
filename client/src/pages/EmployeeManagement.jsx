@@ -1,62 +1,115 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Edit2, Trash2, ChevronRight, User, X, UserCircle } from 'lucide-react';
+import { UserPlus, Search, Edit2, Trash2, ChevronRight, User, X, UserCircle, DollarSign } from 'lucide-react';
 
 export default function EmployeeManagement() {
-  // Load from localStorage
-  const [employees, setEmployees] = useState(() => {
-    const saved = localStorage.getItem('app_employees');
-    return saved ? JSON.parse(saved) : [
-      { id: 1, name: '張小明', level: 'senior', email: 'ming@example.com', joinDate: '2025-01-15' },
-      { id: 2, name: '李美華', level: 'junior', email: 'hua@example.com', joinDate: '2025-02-10' },
-      { id: 3, name: '王大衛', level: 'senior', email: 'david@example.com', joinDate: '2025-03-05' },
-    ];
-  });
-
+  const [employees, setEmployees] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // New Employee Form State
-  const [newEmp, setNewEmp] = useState({ name: '', email: '', level: 'junior' });
+  const [newEmp, setNewEmp] = useState({ name: '', email: '', level: 'junior', hourlyWage: 200 });
+  const [wagesConfig, setWagesConfig] = useState({ junior: 200, senior: 220 });
+  
+  // Editing Employee State
+  const [editingEmp, setEditingEmp] = useState(null);
 
-  // Sync to localStorage
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch('/api/employees');
+      const data = await res.json();
+      setEmployees(data);
+    } catch (err) {
+      console.error('Failed to fetch employees', err);
+    }
+  };
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      if (data.wages) {
+        setWagesConfig(data.wages);
+        // Pre-populate default junior wage for new employees
+        setNewEmp(prev => ({ ...prev, hourlyWage: data.wages.junior }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch settings', err);
+    }
+  };
+
   useEffect(() => {
-    localStorage.setItem('app_employees', JSON.stringify(employees));
-  }, [employees]);
+    fetchEmployees();
+    fetchSettings();
+  }, []);
 
-  const handleAddEmployee = (e) => {
+  const handleAddEmployee = async (e) => {
     e.preventDefault();
     if (!newEmp.name || !newEmp.email) return;
 
-    const employee = {
-      ...newEmp,
-      id: Date.now(),
-      joinDate: new Date().toISOString().split('T')[0]
-    };
-
-    setEmployees([...employees, employee]);
-    setNewEmp({ name: '', email: '', level: 'junior' });
-    setShowAddModal(false);
-    alert(`員工 ${employee.name} 已成功加入系統！`);
+    try {
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEmp)
+      });
+      if (!res.ok) throw new Error('Failed to save employee');
+      const savedEmployee = await res.json();
+      setEmployees([...employees, savedEmployee]);
+      setNewEmp({ name: '', email: '', level: 'junior', hourlyWage: wagesConfig.junior });
+      setShowAddModal(false);
+      alert(`員工 ${savedEmployee.name} 已成功加入系統！`);
+    } catch (err) {
+      console.error(err);
+      alert('新增員工失敗，請稍後再試！');
+    }
   };
 
-  const deleteEmployee = (id, name) => {
-    if (window.confirm(`確定要刪除員工 ${name} 嗎？這將會同步移除其在班表中的所有班次。`)) {
-      // 1. Remove from list
-      const updated = employees.filter(e => e.id !== id);
-      setEmployees(updated);
-      localStorage.setItem('app_employees', JSON.stringify(updated));
+  const handleEditEmployee = async (e) => {
+    e.preventDefault();
+    if (!editingEmp.name || !editingEmp.email) return;
 
-      // 2. Clean up current schedule
-      const savedSchedule = localStorage.getItem('current_schedule');
-      if (savedSchedule) {
-        const schedule = JSON.parse(savedSchedule);
-        const newSchedule = {};
-        Object.keys(schedule).forEach(key => {
-          newSchedule[key] = schedule[key].filter(empName => empName !== name);
+    try {
+      const res = await fetch(`/api/employees/${editingEmp.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingEmp)
+      });
+      if (!res.ok) throw new Error('Failed to update employee');
+      const updated = await res.json();
+      setEmployees(employees.map(e => e.id === updated.id ? { ...e, ...updated } : e));
+      setShowEditModal(false);
+      alert(`員工 ${updated.name} 的資料已成功更新！`);
+    } catch (err) {
+      console.error(err);
+      alert('更新員工失敗，請稍後再試！');
+    }
+  };
+
+  const openEditModal = (emp) => {
+    setEditingEmp({
+      id: emp.id,
+      name: emp.name,
+      email: emp.email,
+      level: emp.level,
+      hourlyWage: emp.hourlyWage || 200
+    });
+    setShowEditModal(true);
+  };
+
+  const deleteEmployee = async (id, name) => {
+    if (window.confirm(`確定要刪除員工 ${name} 嗎？這將會同步移除其在班表中的所有班次。`)) {
+      try {
+        const res = await fetch(`/api/employees/${id}`, {
+          method: 'DELETE'
         });
-        localStorage.setItem('current_schedule', JSON.stringify(newSchedule));
+        if (!res.ok) throw new Error('Failed to delete employee');
+        setEmployees(employees.filter(e => e.id !== id));
+        alert('員工資料已成功刪除。');
+      } catch (err) {
+        console.error(err);
+        alert('刪除員工失敗，請稍後再試！');
       }
-      alert('員工資料與相關班次已同步刪除。');
     }
   };
 
@@ -94,6 +147,7 @@ export default function EmployeeManagement() {
             <tr className="bg-slate-50/50">
               <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">員工資訊</th>
               <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">能力階級</th>
+              <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">每小時時薪</th>
               <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">操作</th>
             </tr>
           </thead>
@@ -120,8 +174,18 @@ export default function EmployeeManagement() {
                     {emp.level === 'senior' ? '資深 Senior' : '初級 Junior'}
                   </span>
                 </td>
+                <td className="px-8 py-5 font-bold text-slate-700">
+                  NT$ {emp.hourlyWage || 200} 元 / 小時
+                </td>
                 <td className="px-8 py-5 text-right">
-                  <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex justify-end gap-2">
+                    <button 
+                      onClick={() => openEditModal(emp)} 
+                      title="編輯員工"
+                      className="p-3 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                    >
+                      <Edit2 size={18} />
+                    </button>
                     <button 
                       onClick={() => {
                         sessionStorage.setItem('auth_user', JSON.stringify({ name: emp.name, role: 'employee', isImpersonated: true }));
@@ -146,7 +210,7 @@ export default function EmployeeManagement() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Add Employee Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <form onSubmit={handleAddEmployee} className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -180,18 +244,29 @@ export default function EmployeeManagement() {
                 />
               </div>
               <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">時薪費率 (NT$)</label>
+                <input 
+                  required
+                  type="number" 
+                  className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-indigo-500 font-bold" 
+                  placeholder="200" 
+                  value={newEmp.hourlyWage}
+                  onChange={e => setNewEmp({...newEmp, hourlyWage: parseInt(e.target.value) || 0})}
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">能力階級</label>
                 <div className="grid grid-cols-2 gap-4">
                   <button 
                     type="button"
-                    onClick={() => setNewEmp({...newEmp, level: 'junior'})}
+                    onClick={() => setNewEmp({...newEmp, level: 'junior', hourlyWage: wagesConfig.junior})}
                     className={`py-4 rounded-2xl font-black transition-all border-2 ${newEmp.level === 'junior' ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400 hover:border-indigo-200'}`}
                   >
                     初級 Junior
                   </button>
                   <button 
                     type="button"
-                    onClick={() => setNewEmp({...newEmp, level: 'senior'})}
+                    onClick={() => setNewEmp({...newEmp, level: 'senior', hourlyWage: wagesConfig.senior})}
                     className={`py-4 rounded-2xl font-black transition-all border-2 ${newEmp.level === 'senior' ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400 hover:border-indigo-200'}`}
                   >
                     資深 Senior
@@ -200,6 +275,76 @@ export default function EmployeeManagement() {
               </div>
               <button type="submit" className="w-full bg-indigo-600 text-white py-5 rounded-[24px] font-black shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all mt-4">
                 確認新增員工
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Edit Employee Modal */}
+      {showEditModal && editingEmp && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleEditEmployee} className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-slate-50/50">
+              <h2 className="text-2xl font-black text-gray-900 tracking-tight">編輯員工資料</h2>
+              <button type="button" onClick={() => setShowEditModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-10 space-y-6">
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">員工姓名</label>
+                <input 
+                  required
+                  type="text" 
+                  className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-indigo-500 font-bold" 
+                  placeholder="請輸入姓名" 
+                  value={editingEmp.name}
+                  onChange={e => setEditingEmp({...editingEmp, name: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">電子郵件</label>
+                <input 
+                  required
+                  type="email" 
+                  className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-indigo-500 font-bold" 
+                  placeholder="example@mail.com" 
+                  value={editingEmp.email}
+                  onChange={e => setEditingEmp({...editingEmp, email: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">每小時時薪 (NT$)</label>
+                <input 
+                  required
+                  type="number" 
+                  className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-indigo-500 font-bold" 
+                  value={editingEmp.hourlyWage}
+                  onChange={e => setEditingEmp({...editingEmp, hourlyWage: parseInt(e.target.value) || 0})}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">能力階級</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    type="button"
+                    onClick={() => setEditingEmp({...editingEmp, level: 'junior'})}
+                    className={`py-4 rounded-2xl font-black transition-all border-2 ${editingEmp.level === 'junior' ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400 hover:border-indigo-200'}`}
+                  >
+                    初級 Junior
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setEditingEmp({...editingEmp, level: 'senior'})}
+                    className={`py-4 rounded-2xl font-black transition-all border-2 ${editingEmp.level === 'senior' ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400 hover:border-indigo-200'}`}
+                  >
+                    資深 Senior
+                  </button>
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-indigo-600 text-white py-5 rounded-[24px] font-black shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all mt-4">
+                確認更新資料
               </button>
             </div>
           </form>

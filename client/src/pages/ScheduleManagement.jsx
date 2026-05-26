@@ -1,55 +1,164 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Save, UserPlus, Trash2, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle, X } from 'lucide-react';
+import { Sparkles, Save, UserPlus, Trash2, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle, X, Calendar } from 'lucide-react';
 
 export default function ScheduleManagement() {
   const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
   const timeSlots = ['08:00 - 10:00', '10:00 - 12:00', '12:00 - 14:00', '14:00 - 16:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00', '22:00 - 00:00'];
   
-  const [schedule, setSchedule] = useState(() => {
-    const saved = localStorage.getItem('current_schedule');
-    return saved ? JSON.parse(saved) : {};
+  const [schedule, setSchedule] = useState({});
+  const [employees, setEmployees] = useState([]);
+  const [allAvailabilities, setAllAvailabilities] = useState({});
+  const [settings, setSettings] = useState({
+    wages: { junior: 200, senior: 220 },
+    staffing: { morning: 2, afternoon: 1, evening: 2 },
+    constraints: { maxHours: 20, consecutiveShiftsAllowed: false, seniorRequiredPerShift: true }
   });
-
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [activeWeek, setActiveWeek] = useState({ start: '', end: '' });
   
   // Selection Modal State
   const [selectionModal, setSelectionModal] = useState({ isOpen: false, slotKey: null, dayIdx: null, rowIdx: null });
 
-  const getEmployees = () => {
-    const saved = localStorage.getItem('app_employees');
-    return saved ? JSON.parse(saved) : [];
+  const fetchData = async () => {
+    try {
+      const schedRes = await fetch('/api/schedule');
+      const schedData = await schedRes.json();
+      setSchedule(schedData);
+
+      const empRes = await fetch('/api/employees');
+      const empData = await empRes.json();
+      setEmployees(empData);
+
+      const availRes = await fetch('/api/availability');
+      const availData = await availRes.json();
+      setAllAvailabilities(availData);
+
+      const settingsRes = await fetch('/api/settings');
+      const settingsData = await settingsRes.json();
+      setSettings(settingsData);
+
+      const weekRes = await fetch('/api/active-week');
+      if (weekRes.ok) {
+        const weekData = await weekRes.json();
+        setActiveWeek({
+          start: weekData.start.replace(/-/g, '/'),
+          end: weekData.end.replace(/-/g, '/')
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch schedule data', err);
+    }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   const handleAutoGenerate = () => {
-    const employees = getEmployees();
-    const pool = employees.map(e => e.name);
-    if (pool.length === 0) {
+    if (employees.length === 0) {
       alert('目前員工名單為空，請先到「員工管理」新增員工！');
       return;
     }
 
     setIsGenerating(true);
     setTimeout(() => {
-      const newSchedule = { ...schedule };
-      timeSlots.forEach((_, row) => {
-        days.forEach((_, col) => {
-          const key = `${row}-${col}`;
-          const randomCount = Math.min(pool.length, Math.floor(Math.random() * 2) + 1);
-          const shuffled = [...pool].sort(() => 0.5 - Math.random());
-          newSchedule[key] = shuffled.slice(0, randomCount);
+      const newSchedule = {};
+      const employeeHours = {};
+      employees.forEach(emp => {
+        employeeHours[emp.name] = 0;
+      });
+
+      // Helper to check if employee is free in a specific day & time block
+      const isFree = (empName, rowIdx, colIdx) => {
+        const empAvail = allAvailabilities[empName];
+        if (!empAvail) return true; // 預設無設定可用時段時視為有空，保障全新系統可正常排班
+        const startRow = rowIdx * 2;
+        const endRow = Math.min(13, startRow + 1);
+        let freeCount = 0;
+        for (let r = startRow; r <= endRow; r++) {
+          if (empAvail[r] && empAvail[r][colIdx]) freeCount++;
+        }
+        return freeCount >= 1;
+      };
+
+      // Helper to get staffing requirement
+      const getRequiredCount = (rowIdx) => {
+        if (rowIdx <= 1) return settings.staffing.morning;
+        if (rowIdx <= 4) return settings.staffing.afternoon;
+        return settings.staffing.evening;
+      };
+
+      // Loop through all days and time slots to assign employees
+      timeSlots.forEach((_, rowIdx) => {
+        days.forEach((_, colIdx) => {
+          const key = `${rowIdx}-${colIdx}`;
+          const requiredCount = getRequiredCount(rowIdx);
+          const assigned = [];
+
+          // 1. Find all available candidates for this slot
+          let candidates = employees.filter(emp => {
+            // Check availability
+            const available = isFree(emp.name, rowIdx, colIdx);
+            // Check max hours limit
+            const underLimit = (employeeHours[emp.name] + 2) <= settings.constraints.maxHours;
+            // Check consecutive shift constraint if consecutiveShiftsAllowed is false
+            let noConsecutiveConflict = true;
+            if (!settings.constraints.consecutiveShiftsAllowed && rowIdx > 0) {
+              const prevKey = `${rowIdx - 1}-${colIdx}`;
+              const prevAssigned = newSchedule[prevKey] || [];
+              if (prevAssigned.includes(emp.name)) {
+                noConsecutiveConflict = false;
+              }
+            }
+            return available && underLimit && noConsecutiveConflict;
+          });
+
+          // Shuffle candidates to ensure fair distribution
+          candidates = candidates.sort(() => 0.5 - Math.random());
+
+          // 2. Apply Senior Guard if required
+          if (settings.constraints.seniorRequiredPerShift) {
+            const seniorCandidateIndex = candidates.findIndex(c => c.level === 'senior');
+            if (seniorCandidateIndex !== -1) {
+              const senior = candidates.splice(seniorCandidateIndex, 1)[0];
+              assigned.push(senior.name);
+              employeeHours[senior.name] += 2;
+            }
+          }
+
+          // 3. Fill the rest of required slots with remaining candidates
+          while (assigned.length < requiredCount && candidates.length > 0) {
+            const nextCandidate = candidates.shift();
+            assigned.push(nextCandidate.name);
+            employeeHours[nextCandidate.name] += 2;
+          }
+
+          newSchedule[key] = assigned;
         });
       });
+
       setSchedule(newSchedule);
       setIsGenerating(false);
       setHasUnsavedChanges(true);
+      alert('已根據您的「系統設定」（包含時段人數、資深保障、週工時上限）自動產生最佳班表！請記得儲存班表。');
     }, 1200);
   };
 
-  const saveToStorage = () => {
-    localStorage.setItem('current_schedule', JSON.stringify(schedule));
-    setHasUnsavedChanges(false);
-    alert('班表已儲存！');
+  const saveToStorage = async () => {
+    try {
+      const res = await fetch('/api/schedule/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(schedule)
+      });
+      if (!res.ok) throw new Error('Failed to save schedule');
+      setHasUnsavedChanges(false);
+      alert('班表已儲存至資料庫！');
+    } catch (err) {
+      console.error(err);
+      alert('儲存失敗，請稍後再試！');
+    }
   };
 
   const removeEmployee = (slotKey, empName) => {
@@ -75,11 +184,9 @@ export default function ScheduleManagement() {
   };
 
   // Helper to check if employee is free in a 2-hour block
-  // Our availability grid is 1-hour slots (8:00 - 22:00), 14 rows.
   const checkAvailability = (empName, rowIdx, dayIdx) => {
-    const saved = localStorage.getItem(`availability_${empName}`);
-    if (!saved) return 'unknown';
-    const grid = JSON.parse(saved);
+    const empAvail = allAvailabilities[empName];
+    if (!empAvail) return 'unknown';
     
     // Check the corresponding 2 hours in the 1-hour grid
     const startRow = rowIdx * 2;
@@ -87,7 +194,7 @@ export default function ScheduleManagement() {
     
     let freeCount = 0;
     for(let r = startRow; r <= endRow; r++) {
-      if (grid[r] && grid[r][dayIdx]) freeCount++;
+      if (empAvail[r] && empAvail[r][dayIdx]) freeCount++;
     }
     
     return freeCount >= 1 ? 'free' : 'busy'; // If at least 1 hour in the 2-hour block is free
@@ -99,6 +206,9 @@ export default function ScheduleManagement() {
       <div className="bg-white p-8 rounded-[40px] shadow-xl border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-6">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">智慧排班系統</h2>
+          <p className="text-xs font-bold text-indigo-500 mt-1.5 uppercase tracking-widest flex items-center gap-1.5">
+             <Calendar size={12} /> 排班週次：{activeWeek.start} - {activeWeek.end}
+          </p>
           {hasUnsavedChanges && <p className="text-amber-500 text-[10px] font-black mt-1 uppercase tracking-widest">● Detected Unsaved Changes</p>}
         </div>
         <div className="flex gap-4">
@@ -178,7 +288,7 @@ export default function ScheduleManagement() {
             </div>
             
             <div className="p-6 max-h-[400px] overflow-y-auto space-y-2">
-              {getEmployees().map(emp => {
+              {employees.map(emp => {
                 const status = checkAvailability(emp.name, selectionModal.rowIdx, selectionModal.dayIdx);
                 const currentSlotEmps = schedule[selectionModal.slotKey] || [];
                 // Use trim() to ensure robust string comparison

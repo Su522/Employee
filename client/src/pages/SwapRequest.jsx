@@ -7,60 +7,113 @@ export default function SwapRequest() {
   const isImpersonated = auth.isImpersonated;
 
   const [myShifts, setMyShifts] = useState([]);
-  const [swapRequests, setSwapRequests] = useState(() => {
-    const saved = localStorage.getItem('swap_requests');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [swapRequests, setSwapRequests] = useState([]);
 
-  useEffect(() => {
-    const savedSchedule = localStorage.getItem('current_schedule');
-    const schedule = savedSchedule ? JSON.parse(savedSchedule) : {};
-    const shifts = [];
-    
-    const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
-    const times = ['08:00 - 12:00', '12:00 - 16:00', '16:00 - 20:00', '20:00 - 00:00'];
-
-    Object.entries(schedule).forEach(([key, emps]) => {
-      if (emps.includes(currentUser)) {
-        const [row, col] = key.split('-');
-        shifts.push({ key, label: `${days[col]} ${times[row]}` });
+  const fetchSwapRequests = async () => {
+    try {
+      const res = await fetch('/api/swaps');
+      if (res.ok) {
+        const data = await res.json();
+        setSwapRequests(data);
       }
-    });
-    setMyShifts(shifts);
-  }, [currentUser]);
-
-  const handleCreateRequest = (shift) => {
-    const reason = prompt('請輸入換班原因：');
-    if (reason) {
-      const newRequest = {
-        id: Date.now(),
-        requester: currentUser,
-        helper: null, // To be filled by another employee
-        shift: shift.label,
-        reason,
-        status: 'pending'
-      };
-      const updated = [...swapRequests, newRequest];
-      setSwapRequests(updated);
-      localStorage.setItem('swap_requests', JSON.stringify(updated));
-      alert('需求已送出！請等待同事響應。');
+    } catch (err) {
+      console.error('Failed to fetch swap requests:', err);
     }
   };
 
-  const handleHelpRequest = (id) => {
-    const updated = swapRequests.map(req => {
-      if (req.id === id) {
-        if (req.requester === currentUser) {
-          alert('您不能幫自己代班喔！');
-          return req;
-        }
-        alert(`您已接受 ${req.requester} 的代班請求，將提交給管理員審核！`);
-        return { ...req, helper: currentUser, status: 'waiting_admin' };
+  const fetchScheduleAndCalculateShifts = async () => {
+    try {
+      const res = await fetch('/api/schedule');
+      if (res.ok) {
+        const schedule = await res.json();
+        const shifts = [];
+        
+        const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+        const times = ['08:00 - 10:00', '10:00 - 12:00', '12:00 - 14:00', '14:00 - 16:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00', '22:00 - 00:00'];
+
+        Object.entries(schedule).forEach(([key, emps]) => {
+          if (emps.includes(currentUser)) {
+            const [row, col] = key.split('-');
+            const rowIdx = parseInt(row);
+            const colIdx = parseInt(col);
+            shifts.push({ 
+              key, 
+              rowIdx,
+              colIdx,
+              label: `${days[colIdx]} ${times[rowIdx]}` 
+            });
+          }
+        });
+        setMyShifts(shifts);
       }
-      return req;
-    });
-    setSwapRequests(updated);
-    localStorage.setItem('swap_requests', JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to fetch schedule for shifts:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchScheduleAndCalculateShifts();
+    fetchSwapRequests();
+  }, [currentUser]);
+
+  const handleCreateRequest = async (shift) => {
+    const reason = prompt('請輸入換班原因：');
+    if (reason) {
+      try {
+        const res = await fetch('/api/swaps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requesterName: currentUser,
+            rowIdx: shift.rowIdx,
+            colIdx: shift.colIdx,
+            reason
+          })
+        });
+        if (res.ok) {
+          alert('需求已送出！請等待同事響應。');
+          fetchSwapRequests();
+        } else {
+          const data = await res.json();
+          alert(`申請失敗：${data.error || '未知錯誤'}`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('申請失敗，請稍後再試。');
+      }
+    }
+  };
+
+  const handleHelpRequest = async (id) => {
+    const req = swapRequests.find(r => r.id === id);
+    if (!req) return;
+    if (req.requester === currentUser) {
+      alert('您不能幫自己代班喔！');
+      return;
+    }
+    const confirm = window.confirm(`您確定要幫 ${req.requester} 代班「${req.shift}」嗎？`);
+    if (confirm) {
+      try {
+        const res = await fetch('/api/swaps/accept', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId: id,
+            helperName: currentUser
+          })
+        });
+        if (res.ok) {
+          alert(`您已接受 ${req.requester} 的代班請求，將提交給管理員審核！`);
+          fetchSwapRequests();
+        } else {
+          const data = await res.json();
+          alert(`接受失敗：${data.error || '未知錯誤'}`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('接受失敗，請稍後再試。');
+      }
+    }
   };
 
   return (

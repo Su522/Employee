@@ -60,16 +60,18 @@ export default function EmployeeLayout() {
             <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">目前使用者</p>
             <p className="text-base font-black text-white truncate">{currentUser}</p>
           </div>
-          <button 
-            onClick={() => {
-              sessionStorage.setItem('auth_user', JSON.stringify({ name: '管理員', role: 'admin' }));
-              window.location.href = '/admin';
-            }}
-            className="flex items-center gap-3 px-4 py-3 w-full text-indigo-300/60 hover:text-amber-400 hover:bg-amber-400/5 rounded-xl transition-all group font-bold mb-1"
-          >
-            <ShieldCheck size={20} className="group-hover:rotate-12 transition-transform" />
-            <span>切換為管理者</span>
-          </button>
+          {isImpersonated && (
+            <button 
+              onClick={() => {
+                sessionStorage.setItem('auth_user', JSON.stringify({ name: '管理員', role: 'admin' }));
+                window.location.href = '/admin';
+              }}
+              className="flex items-center gap-3 px-4 py-3 w-full text-indigo-300/60 hover:text-amber-400 hover:bg-amber-400/5 rounded-xl transition-all group font-bold mb-1"
+            >
+              <ShieldCheck size={20} className="group-hover:rotate-12 transition-transform" />
+              <span>切換為管理者</span>
+            </button>
+          )}
           <button 
             onClick={handleLogout}
             className="flex items-center gap-3 px-4 py-3 w-full text-indigo-300/60 hover:text-red-400 hover:bg-red-400/5 rounded-xl transition-all group font-bold"

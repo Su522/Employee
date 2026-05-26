@@ -3,58 +3,39 @@ import { DollarSign, Clock, Users, Calendar, TrendingUp, AlertCircle } from 'luc
 
 export default function PayRecord() {
   const [records, setRecords] = useState([]);
+  const [activeWeek, setActiveWeek] = useState({ start: '', end: '' });
   
   useEffect(() => {
-    // 1. Load data
-    const savedSchedule = localStorage.getItem('current_schedule');
-    const schedule = savedSchedule ? JSON.parse(savedSchedule) : {};
-    
-    const savedEmployees = localStorage.getItem('app_employees');
-    const employees = savedEmployees ? JSON.parse(savedEmployees) : [];
+    const fetchPayRecords = async () => {
+      try {
+        const res = await fetch('/api/pay-records');
+        const data = await res.json();
+        setRecords(data);
+      } catch (err) {
+        console.error('Failed to fetch pay records', err);
+      }
+    };
 
-    // 2. Create a map of employee level/rates
-    const employeeData = {};
-    employees.forEach(emp => {
-      employeeData[emp.name] = {
-        level: emp.level,
-        rate: emp.level === 'senior' ? 220 : 200
-      };
-    });
-
-    // 3. Calculate hours and pay
-    const stats = {};
-    
-    Object.values(schedule).forEach(empList => {
-      empList.forEach(name => {
-        // Only calculate if employee exists in the system
-        if (employeeData[name]) {
-          if (!stats[name]) {
-            stats[name] = { 
-              hours: 0, 
-              rate: employeeData[name].rate,
-              level: employeeData[name].level 
-            };
-          }
-          stats[name].hours += 2; // Each slot is 2 hours
+    const fetchActiveWeek = async () => {
+      try {
+        const res = await fetch('/api/active-week');
+        if (res.ok) {
+          const data = await res.json();
+          const startFormatted = data.start.replace(/-/g, '/');
+          const endFormatted = data.end.substring(5).replace(/-/g, '/');
+          setActiveWeek({ start: startFormatted, end: endFormatted });
         }
-      });
-    });
+      } catch (err) {
+        console.error('Failed to fetch active week', err);
+      }
+    };
 
-    const finalRecords = Object.keys(stats).map((name, index) => ({
-      id: index + 1,
-      name,
-      level: stats[name].level,
-      hours: stats[name].hours,
-      rate: stats[name].rate,
-      total: stats[name].hours * stats[name].rate,
-      period: '2026/04/27 - 05/03'
-    }));
-
-    setRecords(finalRecords);
+    fetchPayRecords();
+    fetchActiveWeek();
   }, []);
 
-  const totalPayout = records.reduce((sum, rec) => sum + rec.total, 0);
-  const totalHours = records.reduce((sum, rec) => sum + rec.hours, 0);
+  const totalPayout = records.reduce((sum, rec) => sum + Number(rec.total), 0);
+  const totalHours = records.reduce((sum, rec) => sum + Number(rec.hours), 0);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -98,7 +79,7 @@ export default function PayRecord() {
         <div className="p-8 border-b border-gray-50 flex justify-between items-center bg-slate-50/30">
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">薪資結算報表</h2>
           <div className="bg-white px-4 py-2 rounded-xl border border-gray-100 text-xs font-bold text-gray-500 flex items-center gap-2 shadow-sm">
-             <Calendar size={14} /> 2026/04/27 - 05/03
+             <Calendar size={14} /> {activeWeek.start} - {activeWeek.end}
           </div>
         </div>
         

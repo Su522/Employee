@@ -1,0 +1,16 @@
+{
+  "wages": {
+    "junior": 210,
+    "senior": 235
+  },
+  "staffing": {
+    "morning": 2,
+    "afternoon": 1,
+    "evening": 2
+  },
+  "constraints": {
+    "maxHours": 40,
+    "consecutiveShiftsAllowed": false,
+    "seniorRequiredPerShift": true
+  }
+}
