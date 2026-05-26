@@ -180,6 +180,39 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Employee self change password API
+app.put('/api/change-password', async (req, res) => {
+  const { username, currentPassword, newPassword } = req.body;
+  if (!username || !currentPassword || !newPassword) {
+    return res.status(400).json({ error: '請填寫所有必要欄位（姓名、舊密碼、新密碼）！' });
+  }
+
+  try {
+    // 1. Find employee by name
+    const [rows] = await db.query('SELECT employee_id, password FROM Employee WHERE name = ?', [username.trim()]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: '修改失敗：找不到該員工帳號！' });
+    }
+    const employee = rows[0];
+
+    // 2. Compare current password
+    const match = await bcrypt.compare(currentPassword, employee.password);
+    if (!match) {
+      return res.status(401).json({ error: '修改失敗：舊密碼輸入錯誤！' });
+    }
+
+    // 3. Hash and update new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await db.query('UPDATE Employee SET password = ? WHERE employee_id = ?', [hashedPassword, employee.employee_id]);
+
+    res.json({ message: '密碼修改成功，請重新登入！' });
+  } catch (error) {
+    console.error('Change password API error:', error);
+    res.status(500).json({ error: '伺服器內部錯誤，修改密碼失敗。' });
+  }
+});
+
+
 // ==========================================
 // 1. Employee Management API
 // ==========================================
