@@ -56,9 +56,14 @@ async function init() {
       INSERT INTO ScheduleSource (setting_key, setting_value) VALUES
       ('wages_junior', '200'),
       ('wages_senior', '220'),
-      ('staffing_morning', '2'),
-      ('staffing_afternoon', '1'),
-      ('staffing_evening', '2'),
+      ('staffing_slot_0', '2'),
+      ('staffing_slot_1', '2'),
+      ('staffing_slot_2', '1'),
+      ('staffing_slot_3', '1'),
+      ('staffing_slot_4', '1'),
+      ('staffing_slot_5', '2'),
+      ('staffing_slot_6', '2'),
+      ('staffing_slot_7', '2'),
       ('constraints_maxHours', '20'),
       ('constraints_consecutiveShiftsAllowed', 'false'),
       ('constraints_seniorRequiredPerShift', 'true');

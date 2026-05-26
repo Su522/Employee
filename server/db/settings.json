@@ -3,14 +3,19 @@
     "junior": 200,
     "senior": 220
   },
-  "staffing": {
-    "morning": 2,
-    "afternoon": 3,
-    "evening": 2
-  },
+  "staffing": [
+    2,
+    2,
+    1,
+    1,
+    1,
+    2,
+    2,
+    2
+  ],
   "constraints": {
-    "maxHours": 50,
+    "maxHours": 20,
     "consecutiveShiftsAllowed": false,
-    "seniorRequiredPerShift": false
+    "seniorRequiredPerShift": true
   }
 }

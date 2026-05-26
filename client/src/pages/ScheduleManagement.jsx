@@ -10,7 +10,7 @@ export default function ScheduleManagement() {
   const [allAvailabilities, setAllAvailabilities] = useState({});
   const [settings, setSettings] = useState({
     wages: { junior: 200, senior: 220 },
-    staffing: { morning: 2, afternoon: 1, evening: 2 },
+    staffing: [2, 2, 1, 1, 1, 2, 2, 2],
     constraints: { maxHours: 20, consecutiveShiftsAllowed: false, seniorRequiredPerShift: true }
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -86,9 +86,13 @@ export default function ScheduleManagement() {
 
       // Helper to get staffing requirement
       const getRequiredCount = (rowIdx) => {
-        if (rowIdx <= 1) return settings.staffing.morning;
-        if (rowIdx <= 4) return settings.staffing.afternoon;
-        return settings.staffing.evening;
+        if (Array.isArray(settings.staffing)) {
+          return settings.staffing[rowIdx] !== undefined ? settings.staffing[rowIdx] : 2;
+        }
+        // Fallback for safety
+        if (rowIdx <= 1) return (settings.staffing && settings.staffing.morning) || 2;
+        if (rowIdx <= 4) return (settings.staffing && settings.staffing.afternoon) || 1;
+        return (settings.staffing && settings.staffing.evening) || 2;
       };
 
       // Loop through all days and time slots to assign employees

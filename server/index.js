@@ -11,21 +11,25 @@ const port = process.env.PORT || 5000;
 const settingsFilePath = path.join(__dirname, 'db/settings.json');
 
 async function getSettingsFromDb() {
+  const defaultStaffing = [2, 2, 1, 1, 1, 2, 2, 2];
   try {
     const [rows] = await db.query('SELECT setting_key, setting_value FROM ScheduleSource');
     if (rows.length > 0) {
       const settings = {
         wages: { junior: 200, senior: 220 },
-        staffing: { morning: 2, afternoon: 1, evening: 2 },
+        staffing: [...defaultStaffing],
         constraints: { maxHours: 20, consecutiveShiftsAllowed: false, seniorRequiredPerShift: true }
       };
       rows.forEach(row => {
         const val = row.setting_value;
         if (row.setting_key === 'wages_junior') settings.wages.junior = parseInt(val);
         else if (row.setting_key === 'wages_senior') settings.wages.senior = parseInt(val);
-        else if (row.setting_key === 'staffing_morning') settings.staffing.morning = parseInt(val);
-        else if (row.setting_key === 'staffing_afternoon') settings.staffing.afternoon = parseInt(val);
-        else if (row.setting_key === 'staffing_evening') settings.staffing.evening = parseInt(val);
+        else if (row.setting_key.startsWith('staffing_slot_')) {
+          const idx = parseInt(row.setting_key.replace('staffing_slot_', ''));
+          if (idx >= 0 && idx < 8) {
+            settings.staffing[idx] = parseInt(val);
+          }
+        }
         else if (row.setting_key === 'constraints_maxHours') settings.constraints.maxHours = parseInt(val);
         else if (row.setting_key === 'constraints_consecutiveShiftsAllowed') settings.constraints.consecutiveShiftsAllowed = (val === 'true');
         else if (row.setting_key === 'constraints_seniorRequiredPerShift') settings.constraints.seniorRequiredPerShift = (val === 'true');
@@ -39,14 +43,22 @@ async function getSettingsFromDb() {
   // Fallback to local settings.json file
   try {
     if (fs.existsSync(settingsFilePath)) {
-      return JSON.parse(fs.readFileSync(settingsFilePath, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(settingsFilePath, 'utf8'));
+      if (data && data.staffing && !Array.isArray(data.staffing)) {
+        // Map legacy object to array
+        const morning = parseInt(data.staffing.morning) || 2;
+        const afternoon = parseInt(data.staffing.afternoon) || 1;
+        const evening = parseInt(data.staffing.evening) || 2;
+        data.staffing = [morning, morning, afternoon, afternoon, afternoon, evening, evening, evening];
+      }
+      return data;
     }
   } catch (e) {
     console.error('Error reading settings file', e);
   }
   return {
     wages: { junior: 200, senior: 220 },
-    staffing: { morning: 2, afternoon: 1, evening: 2 },
+    staffing: [...defaultStaffing],
     constraints: { maxHours: 20, consecutiveShiftsAllowed: false, seniorRequiredPerShift: true }
   };
 }
@@ -599,9 +611,17 @@ app.post('/api/settings', async (req, res) => {
       if (wages.senior !== undefined) queries.push(['wages_senior', wages.senior.toString()]);
     }
     if (staffing) {
-      if (staffing.morning !== undefined) queries.push(['staffing_morning', staffing.morning.toString()]);
-      if (staffing.afternoon !== undefined) queries.push(['staffing_afternoon', staffing.afternoon.toString()]);
-      if (staffing.evening !== undefined) queries.push(['staffing_evening', staffing.evening.toString()]);
+      if (Array.isArray(staffing)) {
+        staffing.forEach((val, idx) => {
+          if (idx >= 0 && idx < 8) {
+            queries.push([`staffing_slot_${idx}`, val.toString()]);
+          }
+        });
+      } else {
+        if (staffing.morning !== undefined) queries.push(['staffing_morning', staffing.morning.toString()]);
+        if (staffing.afternoon !== undefined) queries.push(['staffing_afternoon', staffing.afternoon.toString()]);
+        if (staffing.evening !== undefined) queries.push(['staffing_evening', staffing.evening.toString()]);
+      }
     }
     if (constraints) {
       if (constraints.maxHours !== undefined) queries.push(['constraints_maxHours', constraints.maxHours.toString()]);
@@ -841,6 +861,62 @@ app.post('/api/swaps/reject', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port: ${port}`);
+async function runMigration() {
+  try {
+    const [rows] = await db.query('SELECT setting_key, setting_value FROM ScheduleSource');
+    const keys = rows.map(r => r.setting_key);
+    
+    const hasLegacy = keys.includes('staffing_morning') || keys.includes('staffing_afternoon') || keys.includes('staffing_evening');
+    const hasNew = keys.some(k => k.startsWith('staffing_slot_'));
+
+    if (hasLegacy && !hasNew) {
+      console.log('Migrating legacy staffing settings to 2-hour slot settings...');
+      let morningVal = '2';
+      let afternoonVal = '1';
+      let eveningVal = '2';
+
+      rows.forEach(r => {
+        if (r.setting_key === 'staffing_morning') morningVal = r.setting_value;
+        if (r.setting_key === 'staffing_afternoon') afternoonVal = r.setting_value;
+        if (r.setting_key === 'staffing_evening') eveningVal = r.setting_value;
+      });
+
+      const slotValues = [
+        morningVal,   // 08:00 - 10:00
+        morningVal,   // 10:00 - 12:00
+        afternoonVal, // 12:00 - 14:00
+        afternoonVal, // 14:00 - 16:00
+        afternoonVal, // 16:00 - 18:00
+        eveningVal,   // 18:00 - 20:00
+        eveningVal,   // 20:00 - 22:00
+        eveningVal    // 22:00 - 00:00
+      ];
+
+      await db.query('START TRANSACTION');
+      for (let i = 0; i < 8; i++) {
+        await db.query(
+          `INSERT INTO ScheduleSource (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?`,
+          [`staffing_slot_${i}`, slotValues[i], slotValues[i]]
+        );
+      }
+      // Delete old keys
+      await db.query(`DELETE FROM ScheduleSource WHERE setting_key IN ('staffing_morning', 'staffing_afternoon', 'staffing_evening')`);
+      await db.query('COMMIT');
+      console.log('Migration completed successfully.');
+    }
+  } catch (err) {
+    console.error('Migration error:', err);
+    try { await db.query('ROLLBACK'); } catch (_) {}
+  }
+}
+
+runMigration().then(() => {
+  app.listen(port, () => {
+    console.log(`Server is running on port: ${port}`);
+  });
+}).catch(err => {
+  console.error('Failed to run database migration on startup:', err);
+  app.listen(port, () => {
+    console.log(`Server is running on port: ${port} (migration failed)`);
+  });
 });

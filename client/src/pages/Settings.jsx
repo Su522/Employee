@@ -1,17 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, DollarSign, Users, ShieldAlert, Save, RefreshCw, CheckCircle2 } from 'lucide-react';
 
+const TIME_SLOTS = [
+  '08:00 - 10:00',
+  '10:00 - 12:00',
+  '12:00 - 14:00',
+  '14:00 - 16:00',
+  '16:00 - 18:00',
+  '18:00 - 20:00',
+  '20:00 - 22:00',
+  '22:00 - 00:00'
+];
+
 export default function SettingsPage() {
   const [wages, setWages] = useState({
     junior: 200,
     senior: 220
   });
 
-  const [staffing, setStaffing] = useState({
-    morning: 2,
-    afternoon: 1,
-    evening: 2
-  });
+  const [staffing, setStaffing] = useState([2, 2, 1, 1, 1, 2, 2, 2]);
 
   const [constraints, setConstraints] = useState({
     maxHours: 20,
@@ -57,7 +64,7 @@ export default function SettingsPage() {
   const handleReset = () => {
     if (window.confirm('您確定要將所有設定重設為預設值嗎？')) {
       setWages({ junior: 200, senior: 220 });
-      setStaffing({ morning: 2, afternoon: 1, evening: 2 });
+      setStaffing([2, 2, 1, 1, 1, 2, 2, 2]);
       setConstraints({ maxHours: 20, consecutiveShiftsAllowed: false, seniorRequiredPerShift: true });
     }
   };
@@ -137,34 +144,23 @@ export default function SettingsPage() {
             <Users className="text-indigo-600" size={22} />
             時段人力需求配置 (每時段配置人數)
           </h3>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 text-center">早班 (Morning)</label>
-              <input 
-                type="number" 
-                value={staffing.morning} 
-                onChange={e => setStaffing({...staffing, morning: parseInt(e.target.value) || 1})}
-                className="w-full bg-gray-50 border-none rounded-2xl py-4 text-center focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 text-center">中班 (Afternoon)</label>
-              <input 
-                type="number" 
-                value={staffing.afternoon} 
-                onChange={e => setStaffing({...staffing, afternoon: parseInt(e.target.value) || 1})}
-                className="w-full bg-gray-50 border-none rounded-2xl py-4 text-center focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 text-center">晚班 (Evening)</label>
-              <input 
-                type="number" 
-                value={staffing.evening} 
-                onChange={e => setStaffing({...staffing, evening: parseInt(e.target.value) || 1})}
-                className="w-full bg-gray-50 border-none rounded-2xl py-4 text-center focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800"
-              />
-            </div>
+          <div className="grid grid-cols-2 gap-4">
+            {TIME_SLOTS.map((slot, index) => (
+              <div key={slot} className="bg-slate-50/50 p-4 rounded-2xl border border-gray-100/50 flex flex-col justify-between">
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2 text-center">{slot}</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  value={Array.isArray(staffing) ? (staffing[index] !== undefined ? staffing[index] : 2) : 2} 
+                  onChange={e => {
+                    const newStaffing = Array.isArray(staffing) ? [...staffing] : [2, 2, 1, 1, 1, 2, 2, 2];
+                    newStaffing[index] = Math.max(0, parseInt(e.target.value) || 0);
+                    setStaffing(newStaffing);
+                  }}
+                  className="w-full bg-white border border-gray-100 rounded-xl py-2 text-center focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800"
+                />
+              </div>
+            ))}
           </div>
           <p className="text-xs text-gray-400 font-medium">※ 智慧排班引擎將以此人數配置做為自動排班的基礎需求門檻。</p>
         </div>
