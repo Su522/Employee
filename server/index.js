@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
 const db = require('./db/connection');
 const app = express();
 const port = process.env.PORT || 5000;
@@ -140,6 +141,45 @@ app.get('/', (req, res) => {
   res.send('Automated Scheduling System API');
 });
 
+// Authentication API
+app.post('/api/login', async (req, res) => {
+  const { role, username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: '姓名與密碼為必填項目！' });
+  }
+
+  try {
+    if (role === 'admin') {
+      if (username === '管理員' && password === 'admin') {
+        return res.json({ name: username, role: 'admin' });
+      } else {
+        return res.status(401).json({ error: '管理者帳號或密碼錯誤！（預設帳號：管理員，密碼：admin）' });
+      }
+    } else {
+      // Find employee by name
+      const [rows] = await db.query(
+        'SELECT employee_id, name, level, email, password FROM Employee WHERE name = ?',
+        [username.trim()]
+      );
+      if (rows.length === 0) {
+        return res.status(401).json({ error: '登入失敗：查無此員工姓名，請確認輸入姓名是否正確！' });
+      }
+      const employee = rows[0];
+
+      // Compare password
+      const match = await bcrypt.compare(password, employee.password);
+      if (match) {
+        return res.json({ name: employee.name, role: 'employee' });
+      } else {
+        return res.status(401).json({ error: '登入失敗：密碼錯誤，請確認輸入密碼是否正確！' });
+      }
+    }
+  } catch (error) {
+    console.error('Login backend error:', error);
+    res.status(500).json({ error: '伺服器驗證失敗，請稍後再試。' });
+  }
+});
+
 // ==========================================
 // 1. Employee Management API
 // ==========================================
@@ -159,9 +199,9 @@ app.get('/api/employees', async (req, res) => {
 
 // Add an employee
 app.post('/api/employees', async (req, res) => {
-  const { name, email, level, hourlyWage } = req.body;
-  if (!name || !email) {
-    return res.status(400).json({ error: 'Name and email are required' });
+  const { name, email, password, level, hourlyWage } = req.body;
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: '姓名、電子郵件和密碼皆為必填！' });
   }
   const joinDate = new Date().toISOString().split('T')[0];
   
@@ -172,9 +212,10 @@ app.post('/api/employees', async (req, res) => {
   const finalWage = (hourlyWage !== undefined && hourlyWage !== null && hourlyWage !== '') ? parseInt(hourlyWage) : defaultWage;
 
   try {
+    const hashedPassword = await bcrypt.hash(password, 10);
     const [result] = await db.query(
-      'INSERT INTO Employee (name, email, level, hourly_wage, join_date) VALUES (?, ?, ?, ?, ?)',
-      [name, email, level || 'junior', finalWage, joinDate]
+      'INSERT INTO Employee (name, email, password, level, hourly_wage, join_date) VALUES (?, ?, ?, ?, ?, ?)',
+      [name, email, hashedPassword, level || 'junior', finalWage, joinDate]
     );
     res.status(201).json({ id: result.insertId, name, email, level: level || 'junior', hourlyWage: finalWage, joinDate });
   } catch (error) {
@@ -186,12 +227,20 @@ app.post('/api/employees', async (req, res) => {
 // Update an employee
 app.put('/api/employees/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, email, level, hourlyWage } = req.body;
+  const { name, email, password, level, hourlyWage } = req.body;
   try {
-    await db.query(
-      'UPDATE Employee SET name = ?, email = ?, level = ?, hourly_wage = ? WHERE employee_id = ?',
-      [name, email, level, hourlyWage || 200, id]
-    );
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      await db.query(
+        'UPDATE Employee SET name = ?, email = ?, password = ?, level = ?, hourly_wage = ? WHERE employee_id = ?',
+        [name, email, hashedPassword, level, hourlyWage || 200, id]
+      );
+    } else {
+      await db.query(
+        'UPDATE Employee SET name = ?, email = ?, level = ?, hourly_wage = ? WHERE employee_id = ?',
+        [name, email, level, hourlyWage || 200, id]
+      );
+    }
     res.json({ id: parseInt(id), name, email, level, hourlyWage: hourlyWage || 200 });
   } catch (error) {
     console.error(error);

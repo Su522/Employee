@@ -8,7 +8,7 @@ export default function EmployeeManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   
   // New Employee Form State
-  const [newEmp, setNewEmp] = useState({ name: '', email: '', level: 'junior', hourlyWage: 200 });
+  const [newEmp, setNewEmp] = useState({ name: '', email: '', password: '', level: 'junior', hourlyWage: 200 });
   const [wagesConfig, setWagesConfig] = useState({ junior: 200, senior: 220 });
   
   // Editing Employee State
@@ -45,7 +45,7 @@ export default function EmployeeManagement() {
 
   const handleAddEmployee = async (e) => {
     e.preventDefault();
-    if (!newEmp.name || !newEmp.email) return;
+    if (!newEmp.name || !newEmp.email || !newEmp.password) return;
 
     try {
       const res = await fetch('/api/employees', {
@@ -56,7 +56,7 @@ export default function EmployeeManagement() {
       if (!res.ok) throw new Error('Failed to save employee');
       const savedEmployee = await res.json();
       setEmployees([...employees, savedEmployee]);
-      setNewEmp({ name: '', email: '', level: 'junior', hourlyWage: wagesConfig.junior });
+      setNewEmp({ name: '', email: '', password: '', level: 'junior', hourlyWage: wagesConfig.junior });
       setShowAddModal(false);
       alert(`員工 ${savedEmployee.name} 已成功加入系統！`);
     } catch (err) {
@@ -91,6 +91,7 @@ export default function EmployeeManagement() {
       id: emp.id,
       name: emp.name,
       email: emp.email,
+      password: '',
       level: emp.level,
       hourlyWage: emp.hourlyWage || 200
     });
@@ -244,6 +245,17 @@ export default function EmployeeManagement() {
                 />
               </div>
               <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">登入密碼</label>
+                <input 
+                  required
+                  type="password" 
+                  className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-indigo-500 font-bold" 
+                  placeholder="設定登入密碼" 
+                  value={newEmp.password}
+                  onChange={e => setNewEmp({...newEmp, password: e.target.value})}
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">時薪費率 (NT$)</label>
                 <input 
                   required
@@ -312,6 +324,16 @@ export default function EmployeeManagement() {
                   placeholder="example@mail.com" 
                   value={editingEmp.email}
                   onChange={e => setEditingEmp({...editingEmp, email: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">登入密碼 (留空表示不修改)</label>
+                <input 
+                  type="password" 
+                  className="w-full bg-gray-50 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-indigo-500 font-bold" 
+                  placeholder="輸入新密碼以進行修改" 
+                  value={editingEmp.password || ''}
+                  onChange={e => setEditingEmp({...editingEmp, password: e.target.value})}
                 />
               </div>
               <div>

@@ -1,6 +1,7 @@
 const mysql = require('mysql2/promise');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 async function init() {
@@ -34,12 +35,14 @@ async function init() {
   const [rows] = await connection.query('SELECT COUNT(*) as count FROM Employee');
   if (rows[0].count === 0) {
     console.log('Seeding initial employees...');
-    await connection.query(`
-      INSERT INTO Employee (name, email, level, hourly_wage, join_date) VALUES 
-      ('張小明', 'ming@example.com', 'senior', 220, '2025-01-15'),
-      ('李美華', 'hua@example.com', 'junior', 200, '2025-02-10'),
-      ('王大衛', 'david@example.com', 'senior', 220, '2025-03-05');
-    `);
+    const hashedPassword = await bcrypt.hash('123456', 10);
+    await connection.query(
+      `INSERT INTO Employee (name, email, password, level, hourly_wage, join_date) VALUES 
+      ('張小明', 'ming@example.com', ?, 'senior', 220, '2025-01-15'),
+      ('李美華', 'hua@example.com', ?, 'junior', 200, '2025-02-10'),
+      ('王大衛', 'david@example.com', ?, 'senior', 220, '2025-03-05')`,
+      [hashedPassword, hashedPassword, hashedPassword]
+    );
     console.log('Seed data inserted successfully.');
   } else {
     console.log('Employee table is not empty. Skipping seed data.');

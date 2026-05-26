@@ -5,12 +5,12 @@
   },
   "staffing": {
     "morning": 2,
-    "afternoon": 1,
+    "afternoon": 3,
     "evening": 2
   },
   "constraints": {
-    "maxHours": 20,
+    "maxHours": 50,
     "consecutiveShiftsAllowed": false,
-    "seniorRequiredPerShift": true
+    "seniorRequiredPerShift": false
   }
 }
