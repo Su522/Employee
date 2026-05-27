@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, CheckCircle, Info, Upload, Download, FileSpreadsheet } from 'lucide-react';
+import { Save, Calendar as CalendarIcon, Info, Upload, Download, FileSpreadsheet } from 'lucide-react';
 
 const SLOT_BOUNDS = [
   { start: 8 * 60, end: 10 * 60 },
