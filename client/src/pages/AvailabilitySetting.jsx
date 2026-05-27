@@ -58,6 +58,22 @@ export default function AvailabilitySetting() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragValue, setDragValue] = useState(null);
   const [courses, setCourses] = useState([]);
+  const [dateRange, setDateRange] = useState(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    const currentMonday = new Date(today);
+    currentMonday.setDate(diff);
+
+    const nextMonday = new Date(currentMonday);
+    nextMonday.setDate(currentMonday.getDate() + 7);
+
+    const nextSunday = new Date(nextMonday);
+    nextSunday.setDate(nextMonday.getDate() + 6);
+
+    const format = (d) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    return `${format(nextMonday)} - ${format(nextSunday)}`;
+  });
 
   const fetchAvailability = useCallback(async () => {
     try {
@@ -86,12 +102,27 @@ export default function AvailabilitySetting() {
     }
   }, [currentUser]);
 
+  const fetchDateRange = useCallback(async () => {
+    try {
+      const res = await fetch('/api/active-week?offset=1');
+      if (res.ok) {
+        const data = await res.json();
+        const startFormatted = data.start.replace(/-/g, '/');
+        const endFormatted = data.end.replace(/-/g, '/');
+        setDateRange(`${startFormatted} - ${endFormatted}`);
+      }
+    } catch (err) {
+      console.error('Failed to fetch active week range', err);
+    }
+  }, []);
+
   useEffect(() => {
     Promise.resolve().then(() => {
       fetchAvailability();
       fetchCourseSchedule();
+      fetchDateRange();
     });
-  }, [fetchAvailability, fetchCourseSchedule]);
+  }, [fetchAvailability, fetchCourseSchedule, fetchDateRange]);
 
   const toggleSlot = (row, col) => {
     const newGrid = [...grid];
@@ -272,7 +303,7 @@ export default function AvailabilitySetting() {
           </div>
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">下一週時段預約</h2>
-            <p className="text-sm text-slate-400 font-bold uppercase tracking-widest mt-1">2026/05/04 - 2026/05/10</p>
+            <p className="text-sm text-slate-400 font-bold uppercase tracking-widest mt-1">{dateRange}</p>
           </div>
         </div>
         <button 
