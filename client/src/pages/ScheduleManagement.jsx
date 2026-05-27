@@ -366,23 +366,25 @@ export default function ScheduleManagement() {
                 const currentSlotEmps = schedule[selectionModal.slotKey] || [];
                 // Use trim() to ensure robust string comparison
                 const isAlreadyIn = currentSlotEmps.some(name => name.trim() === emp.name.trim());
+                const isBusy = status === 'busy';
+                const isDisabled = isAlreadyIn || isBusy;
                 
                 return (
                   <button
                     key={emp.id}
                     type="button"
-                    disabled={isAlreadyIn}
+                    disabled={isDisabled}
                     onClick={() => addEmployeeToSlot(emp.name)}
                     className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
-                      isAlreadyIn ? 'bg-slate-50 border-gray-100 opacity-60 cursor-not-allowed' : 'bg-white border-gray-100 hover:border-indigo-600 hover:shadow-lg'
+                      isDisabled ? 'bg-slate-50 border-gray-100 opacity-60 cursor-not-allowed' : 'bg-white border-gray-100 hover:border-indigo-600 hover:shadow-lg'
                     }`}
                   >
                     <div className="flex items-center gap-4">
-                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${isAlreadyIn ? 'bg-slate-200 text-slate-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${isDisabled ? 'bg-slate-200 text-slate-400' : 'bg-indigo-50 text-indigo-600'}`}>
                          {emp.name[0]}
                        </div>
                        <div className="text-left">
-                         <p className={`font-bold ${isAlreadyIn ? 'text-slate-400' : 'text-slate-900'}`}>{emp.name}</p>
+                         <p className={`font-bold ${isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>{emp.name}</p>
                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{emp.level}</p>
                        </div>
                     </div>
@@ -392,15 +394,15 @@ export default function ScheduleManagement() {
                         <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg uppercase tracking-widest">
                            已在班表中
                         </span>
+                      ) : isBusy ? (
+                        <span className="flex items-center gap-1 text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-1 rounded-lg uppercase tracking-widest">
+                           <XCircle size={12} /> 忙碌 (禁止排班)
+                        </span>
                       ) : (
                         <>
                           {status === 'free' ? (
                             <span className="flex items-center gap-1 text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg">
                                <CheckCircle2 size={12} /> 有空
-                            </span>
-                          ) : status === 'busy' ? (
-                            <span className="flex items-center gap-1 text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-1 rounded-lg">
-                               <XCircle size={12} /> 忙碌
                             </span>
                           ) : (
                             <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">未設定</span>

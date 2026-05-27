@@ -138,7 +138,7 @@ async function seedMockScheduleForWeek(offset) {
     console.log(`Seeding mock schedule for week offset ${offset} (${start} - ${end})...`);
 
     // Get all employees
-    const [employees] = await db.query('SELECT employee_id, name, level, hourly_wage FROM Employee');
+    const [employees] = await db.query("SELECT employee_id, name, level, hourly_wage FROM Employee WHERE level != 'manager'");
     if (employees.length === 0) {
       console.log('No employees found. Cannot seed mock schedule.');
       return;
@@ -258,30 +258,33 @@ app.post('/api/login', async (req, res) => {
   }
 
   try {
-    if (role === 'admin') {
-      if (username === '管理員' && password === 'admin') {
-        return res.json({ name: username, role: 'admin' });
-      } else {
-        return res.status(401).json({ error: '管理者帳號或密碼錯誤！（預設帳號：管理員，密碼：admin）' });
-      }
-    } else {
-      // Find employee by name
-      const [rows] = await db.query(
-        'SELECT employee_id, name, level, email, password FROM Employee WHERE name = ?',
-        [username.trim()]
-      );
-      if (rows.length === 0) {
-        return res.status(401).json({ error: '登入失敗：查無此員工姓名，請確認輸入姓名是否正確！' });
-      }
-      const employee = rows[0];
+    // 1. Find user by name in Employee table
+    const [rows] = await db.query(
+      'SELECT employee_id, name, level, email, password FROM Employee WHERE name = ?',
+      [username.trim()]
+    );
+    if (rows.length === 0) {
+      return res.status(401).json({ error: '登入失敗：帳號不存在，請確認輸入姓名是否正確！' });
+    }
+    const user = rows[0];
 
-      // Compare password
-      const match = await bcrypt.compare(password, employee.password);
-      if (match) {
-        return res.json({ name: employee.name, role: 'employee' });
-      } else {
-        return res.status(401).json({ error: '登入失敗：密碼錯誤，請確認輸入密碼是否正確！' });
+    // 2. Compare password
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).json({ error: '登入失敗：密碼錯誤，請確認輸入密碼是否正確！' });
+    }
+
+    // 3. Verify entryway role and database level role match
+    if (user.level === 'manager') {
+      if (role !== 'admin') {
+        return res.status(401).json({ error: '登入失敗：管理者請由管理者登入頁面登入！' });
       }
+      return res.json({ name: user.name, role: 'admin' });
+    } else {
+      if (role !== 'employee') {
+        return res.status(401).json({ error: '登入失敗：該帳號非管理者帳號！' });
+      }
+      return res.json({ name: user.name, role: 'employee' });
     }
   } catch (error) {
     console.error('Login backend error:', error);
@@ -330,7 +333,7 @@ app.put('/api/change-password', async (req, res) => {
 app.get('/api/employees', async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT employee_id AS id, name, level, email, hourly_wage AS hourlyWage, DATE_FORMAT(join_date, '%Y-%m-%d') AS joinDate FROM Employee"
+      "SELECT employee_id AS id, name, level, email, hourly_wage AS hourlyWage, DATE_FORMAT(join_date, '%Y-%m-%d') AS joinDate FROM Employee WHERE level != 'manager'"
     );
     res.json(rows);
   } catch (error) {
@@ -552,6 +555,85 @@ app.post('/api/availability/:employeeName', async (req, res) => {
   }
 });
 
+// Get course schedule for an employee
+app.get('/api/course-schedule/:employeeName', async (req, res) => {
+  const { employeeName } = req.params;
+  try {
+    const [employees] = await db.query('SELECT employee_id FROM Employee WHERE name = ?', [employeeName]);
+    if (employees.length === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+    const empId = employees[0].employee_id;
+
+    const [rows] = await db.query(
+      `SELECT start_time, end_time, day_of_week, CourseName
+       FROM CourseSchedule WHERE employee_id = ?`,
+      [empId]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to get course schedule' });
+  }
+});
+
+// Save course schedule for an employee
+app.post('/api/course-schedule/:employeeName', async (req, res) => {
+  const { employeeName } = req.params;
+  const courses = req.body; // Array of { day_of_week, startTime, endTime, courseName }
+  if (!Array.isArray(courses)) {
+    return res.status(400).json({ error: 'Invalid course schedule data' });
+  }
+
+  try {
+    // 1. Find employee_id
+    const [employees] = await db.query('SELECT employee_id FROM Employee WHERE name = ?', [employeeName]);
+    if (employees.length === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+    const empId = employees[0].employee_id;
+
+    // Start transaction
+    await db.query('START TRANSACTION');
+
+    // Clean up existing course schedule entries for this employee
+    await db.query('DELETE FROM CourseSchedule WHERE employee_id = ?', [empId]);
+
+    // Insert new entries
+    for (const course of courses) {
+      // Map day name to ENUM: 'Mon','Tue','Wed','Thu','Fri','Sat','Sun'
+      let dbDay = 'Mon';
+      const d = course.day_of_week;
+      if (d.includes('一') || d.includes('Mon') || d === '1') dbDay = 'Mon';
+      else if (d.includes('二') || d.includes('Tue') || d === '2') dbDay = 'Tue';
+      else if (d.includes('三') || d.includes('Wed') || d === '3') dbDay = 'Wed';
+      else if (d.includes('四') || d.includes('Thu') || d === '4') dbDay = 'Thu';
+      else if (d.includes('五') || d.includes('Fri') || d === '5') dbDay = 'Fri';
+      else if (d.includes('六') || d.includes('Sat') || d === '6') dbDay = 'Sat';
+      else if (d.includes('日') || d.includes('天') || d.includes('Sun') || d === '7' || d === '0') dbDay = 'Sun';
+
+      // Format time string to HH:MM:00
+      let startTime = course.startTime;
+      if (startTime && startTime.length === 5) startTime += ':00';
+      let endTime = course.endTime;
+      if (endTime && endTime.length === 5) endTime += ':00';
+
+      await db.query(
+        `INSERT INTO CourseSchedule (employee_id, start_time, end_time, day_of_week, CourseName)
+         VALUES (?, ?, ?, ?, ?)`,
+        [empId, startTime, endTime, dbDay, course.courseName || null]
+      );
+    }
+
+    await db.query('COMMIT');
+    res.json({ message: 'Course schedule saved successfully' });
+  } catch (error) {
+    console.error(error);
+    try { await db.query('ROLLBACK'); } catch (_) {}
+    res.status(500).json({ error: 'Failed to save course schedule' });
+  }
+});
+
 
 // ==========================================
 // 3. Schedule API
@@ -620,7 +702,7 @@ app.post('/api/schedule/save', async (req, res) => {
   
   try {
     // 1. Get all employees mapping name -> { id, level, hourly_wage }
-    const [employees] = await db.query('SELECT employee_id, name, level, hourly_wage FROM Employee');
+    const [employees] = await db.query("SELECT employee_id, name, level, hourly_wage FROM Employee WHERE level != 'manager'");
     const empMap = {};
     employees.forEach(emp => {
       empMap[emp.name] = { id: emp.employee_id, level: emp.level, hourly_wage: emp.hourly_wage };
@@ -1009,6 +1091,79 @@ async function runMigration() {
     // Ensure Availability.shift column is VARCHAR(50) instead of ENUM
     console.log('Ensuring Availability.shift column is VARCHAR(50)...');
     await db.query('ALTER TABLE Availability MODIFY COLUMN shift VARCHAR(50) NOT NULL');
+
+    // Ensure Employee.level column supports 'manager'
+    console.log("Ensuring Employee.level column supports 'manager'...");
+    await db.query("ALTER TABLE Employee MODIFY COLUMN level ENUM('junior', 'senior', 'manager') DEFAULT 'junior'");
+
+    // Check if employee IDs need to be reset to start from 1
+    const [needsIdReset] = await db.query("SELECT COUNT(*) as count FROM Employee WHERE employee_id > 9");
+    if (needsIdReset[0].count > 0) {
+      console.log("Employee IDs are not starting from 1. Performing full database reset...");
+      await db.query("SET FOREIGN_KEY_CHECKS = 0");
+      await db.query("TRUNCATE TABLE swapRequest");
+      await db.query("TRUNCATE TABLE PayRecord");
+      await db.query("TRUNCATE TABLE WorkSchedule");
+      await db.query("TRUNCATE TABLE Availability");
+      await db.query("TRUNCATE TABLE CourseSchedule");
+      await db.query("TRUNCATE TABLE Employee");
+      await db.query("SET FOREIGN_KEY_CHECKS = 1");
+      console.log("Database tables truncated and AUTO_INCREMENT reset to 1.");
+    }
+
+    // Check if manager exists
+    const [managers] = await db.query("SELECT COUNT(*) as count FROM Employee WHERE level = 'manager'");
+    if (managers[0].count === 0) {
+      console.log("Seeding default manager account into Employee table...");
+      const hashedAdminPassword = await bcrypt.hash('admin', 10);
+      await db.query(
+        `INSERT INTO Employee (name, email, password, level, hourly_wage, join_date)
+         VALUES ('管理員', 'admin@example.com', ?, 'manager', 0, '2025-01-01')`,
+        [hashedAdminPassword]
+      );
+      console.log("Default manager account seeded successfully.");
+    }
+
+    // Check if we need to clean up legacy 3-character employee names
+    const [legacyEmps] = await db.query(
+      "SELECT COUNT(*) as count FROM Employee WHERE name IN ('張小明', '李美華', '王大衛', '陳志明', '林淑芬', '黃秀琴', '吳信宏', '蔡佳蓉')"
+    );
+    if (legacyEmps[0].count > 0) {
+      console.log("Legacy 3-character employees detected. Performing database cleanup for renaming...");
+      await db.query("DELETE FROM Employee WHERE level != 'manager'");
+      console.log("Legacy employees and associated schedules cleared.");
+    }
+
+    // Check if we need to seed the default 8 employees
+    const [employeesCount] = await db.query("SELECT COUNT(*) as count FROM Employee WHERE level != 'manager'");
+    if (employeesCount[0].count === 0) {
+      console.log("Seeding new 2-character employee list...");
+      const hashedPassword = await bcrypt.hash('123456', 10);
+      const defaultEmployees = [
+        ['小明', 'ming@example.com', hashedPassword, 'senior', 220, '2025-01-15'],
+        ['美華', 'hua@example.com', hashedPassword, 'junior', 200, '2025-02-10'],
+        ['大衛', 'david@example.com', hashedPassword, 'senior', 220, '2025-03-05'],
+        ['志明', 'chihming@example.com', hashedPassword, 'junior', 200, '2025-03-10'],
+        ['淑芬', 'shufen@example.com', hashedPassword, 'junior', 200, '2025-03-12'],
+        ['秀琴', 'hsiuchin@example.com', hashedPassword, 'senior', 220, '2025-03-15'],
+        ['信宏', 'hsinhong@example.com', hashedPassword, 'junior', 200, '2025-03-18'],
+        ['佳蓉', 'chiarung@example.com', hashedPassword, 'junior', 200, '2025-03-20']
+      ];
+      
+      for (const emp of defaultEmployees) {
+        await db.query(
+          `INSERT INTO Employee (name, email, password, level, hourly_wage, join_date)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          emp
+        );
+      }
+      console.log("New 2-character employees seeded successfully.");
+      
+      // Clear mock schedules to force re-seeding
+      await db.query("DELETE FROM PayRecord");
+      await db.query("DELETE FROM WorkSchedule");
+      console.log("Mock schedules cleared to trigger fresh seed.");
+    }
 
     const [rows] = await db.query('SELECT setting_key, setting_value FROM ScheduleSource');
     const keys = rows.map(r => r.setting_key);

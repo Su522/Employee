@@ -1,21 +1,21 @@
 {
   "wages": {
-    "junior": 200,
-    "senior": 220
+    "junior": 210,
+    "senior": 250
   },
   "staffing": [
     2,
     2,
-    1,
-    1,
+    2,
+    2,
     3,
     2,
     2,
     2
   ],
   "constraints": {
-    "maxHours": 20,
+    "maxHours": 40,
     "consecutiveShiftsAllowed": false,
-    "seniorRequiredPerShift": true
+    "seniorRequiredPerShift": false
   }
 }

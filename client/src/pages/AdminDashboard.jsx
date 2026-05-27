@@ -1,12 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Calendar, Settings, LogOut, Bell, DollarSign, ArrowLeftRight, ShieldCheck, Clock, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, Settings, LogOut, Bell, DollarSign, ArrowLeftRight, ShieldCheck, Clock, AlertTriangle, Lock, X } from 'lucide-react';
 
 export default function AdminDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
+
+  // Password Modification State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChanging, setIsChanging] = useState(false);
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!currentPassword || !newPassword || !confirmPassword) return;
+
+    if (newPassword !== confirmPassword) {
+      alert('修改失敗：新密碼與確認新密碼輸入不一致！');
+      return;
+    }
+
+    setIsChanging(true);
+    try {
+      const res = await fetch('/api/change-password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: '管理員',
+          currentPassword,
+          newPassword
+        })
+      });
+
+      if (res.ok) {
+        alert('密碼修改成功！請以新密碼重新登入。');
+        setShowPasswordModal(false);
+        sessionStorage.removeItem('auth_user');
+        navigate('/login');
+      } else {
+        const data = await res.json();
+        alert(data.error || '密碼修改失敗，請稍後再試。');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('連線失敗，請稍後再試。');
+    } finally {
+      setIsChanging(false);
+    }
+  };
 
   const menuItems = [
     { path: '/admin/employees', label: '員工管理', icon: <Users size={20} /> },
@@ -111,6 +156,18 @@ export default function AdminDashboard() {
             </div>
           </div>
           <button 
+            onClick={() => {
+              setCurrentPassword('');
+              setNewPassword('');
+              setConfirmPassword('');
+              setShowPasswordModal(true);
+            }}
+            className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all group font-bold mb-1"
+          >
+            <Lock size={20} className="group-hover:rotate-12 transition-transform" />
+            <span>修改密碼</span>
+          </button>
+          <button 
             onClick={handleLogout}
             className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:text-red-400 hover:bg-red-400/5 rounded-xl transition-all group font-bold"
           >
@@ -201,6 +258,70 @@ export default function AdminDashboard() {
           </div>
         </div>
       </main>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPasswordModal(false)}></div>
+          <form onSubmit={handleChangePassword} className="bg-white w-full max-w-md rounded-[40px] shadow-2xl relative z-10 overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200">
+            <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-slate-50/50">
+               <div>
+                 <h3 className="text-xl font-black text-slate-900">修改管理者密碼</h3>
+                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">帳號姓名：管理員</p>
+               </div>
+               <button type="button" onClick={() => setShowPasswordModal(false)} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400">
+                 <X size={20} />
+               </button>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">舊密碼</label>
+                <input 
+                  required
+                  type="password"
+                  placeholder="輸入目前的密碼"
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4.5 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">新密碼</label>
+                <input 
+                  required
+                  type="password"
+                  placeholder="輸入新的密碼"
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4.5 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">確認新密碼</label>
+                <input 
+                  required
+                  type="password"
+                  placeholder="再次輸入新密碼"
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4.5 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                />
+              </div>
+
+              <button 
+                type="submit"
+                disabled={isChanging}
+                className="w-full bg-indigo-600 text-white py-4.5 rounded-[24px] font-black shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 mt-4"
+              >
+                {isChanging ? '處理中...' : '確認修改密碼'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

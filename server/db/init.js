@@ -34,14 +34,25 @@ async function init() {
   // 2. Seed initial data if Employee table is empty
   const [rows] = await connection.query('SELECT COUNT(*) as count FROM Employee');
   if (rows[0].count === 0) {
-    console.log('Seeding initial employees...');
+    console.log('Seeding initial employees and manager...');
     const hashedPassword = await bcrypt.hash('123456', 10);
+    const hashedAdminPassword = await bcrypt.hash('admin', 10);
     await connection.query(
       `INSERT INTO Employee (name, email, password, level, hourly_wage, join_date) VALUES 
-      ('張小明', 'ming@example.com', ?, 'senior', 220, '2025-01-15'),
-      ('李美華', 'hua@example.com', ?, 'junior', 200, '2025-02-10'),
-      ('王大衛', 'david@example.com', ?, 'senior', 220, '2025-03-05')`,
-      [hashedPassword, hashedPassword, hashedPassword]
+      ('小明', 'ming@example.com', ?, 'senior', 220, '2025-01-15'),
+      ('美華', 'hua@example.com', ?, 'junior', 200, '2025-02-10'),
+      ('大衛', 'david@example.com', ?, 'senior', 220, '2025-03-05'),
+      ('志明', 'chihming@example.com', ?, 'junior', 200, '2025-03-10'),
+      ('淑芬', 'shufen@example.com', ?, 'junior', 200, '2025-03-12'),
+      ('秀琴', 'hsiuchin@example.com', ?, 'senior', 220, '2025-03-15'),
+      ('信宏', 'hsinhong@example.com', ?, 'junior', 200, '2025-03-18'),
+      ('佳蓉', 'chiarung@example.com', ?, 'junior', 200, '2025-03-20'),
+      ('管理員', 'admin@example.com', ?, 'manager', 0, '2025-01-01')`,
+      [
+        hashedPassword, hashedPassword, hashedPassword, 
+        hashedPassword, hashedPassword, hashedPassword, 
+        hashedPassword, hashedPassword, hashedAdminPassword
+      ]
     );
     console.log('Seed data inserted successfully.');
   } else {
