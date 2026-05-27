@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Save, Calendar as CalendarIcon, Info, Upload, Download, FileSpreadsheet } from 'lucide-react';
 
 const SLOT_BOUNDS = [
@@ -59,7 +59,7 @@ export default function AvailabilitySetting() {
   const [dragValue, setDragValue] = useState(null);
   const [courses, setCourses] = useState([]);
 
-  const fetchAvailability = async () => {
+  const fetchAvailability = useCallback(async () => {
     try {
       const res = await fetch(`/api/availability/${encodeURIComponent(currentUser)}`);
       const data = await res.json();
@@ -67,9 +67,9 @@ export default function AvailabilitySetting() {
     } catch (err) {
       console.error('Failed to fetch availability', err);
     }
-  };
+  }, [currentUser]);
 
-  const fetchCourseSchedule = async () => {
+  const fetchCourseSchedule = useCallback(async () => {
     try {
       const res = await fetch(`/api/course-schedule/${encodeURIComponent(currentUser)}`);
       if (res.ok) {
@@ -84,12 +84,14 @@ export default function AvailabilitySetting() {
     } catch (err) {
       console.error('Failed to fetch course schedule', err);
     }
-  };
+  }, [currentUser]);
 
   useEffect(() => {
-    fetchAvailability();
-    fetchCourseSchedule();
-  }, [currentUser]);
+    Promise.resolve().then(() => {
+      fetchAvailability();
+      fetchCourseSchedule();
+    });
+  }, [fetchAvailability, fetchCourseSchedule]);
 
   const toggleSlot = (row, col) => {
     const newGrid = [...grid];
@@ -326,7 +328,7 @@ export default function AvailabilitySetting() {
           {days.map(day => <div key={day} className="h-14 border-b border-slate-100 bg-slate-50/50 flex items-center justify-center font-black text-slate-700 text-sm">{day}</div>)}
 
           {timeSlots.map((time, rowIdx) => (
-            <React.Fragment key={time}>
+            <Fragment key={time}>
               <div className="h-12 border-b border-r border-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 bg-slate-50/10 tracking-tighter">{time}</div>
               {days.map((_, colIdx) => (
                 <div
@@ -336,7 +338,7 @@ export default function AvailabilitySetting() {
                   className={`h-12 border-b border-r border-slate-50 cursor-pointer transition-all ${grid[rowIdx][colIdx] ? 'bg-indigo-600 shadow-inner scale-[0.98] rounded-sm' : 'hover:bg-indigo-50'}`}
                 />
               ))}
-            </React.Fragment>
+            </Fragment>
           ))}
         </div>
       </div>

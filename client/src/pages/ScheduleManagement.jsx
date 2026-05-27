@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Sparkles, Save, UserPlus, Trash2, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle, X, Calendar, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Sparkles, Save, Trash2, AlertCircle, CheckCircle2, XCircle, X, Calendar, ChevronDown } from 'lucide-react';
 
 export default function ScheduleManagement() {
   const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
@@ -21,7 +21,7 @@ export default function ScheduleManagement() {
   // Selection Modal State
   const [selectionModal, setSelectionModal] = useState({ isOpen: false, slotKey: null, dayIdx: null, rowIdx: null });
 
-  const fetchData = async (offset = weekOffset) => {
+  const fetchData = useCallback(async (offset = weekOffset) => {
     try {
       const schedRes = await fetch(`/api/schedule?offset=${offset}`);
       const schedData = await schedRes.json();
@@ -51,7 +51,7 @@ export default function ScheduleManagement() {
     } catch (err) {
       console.error('Failed to fetch schedule data', err);
     }
-  };
+  }, [weekOffset]);
 
   const getWeeksList = () => {
     const today = new Date();
@@ -84,8 +84,10 @@ export default function ScheduleManagement() {
   };
 
   useEffect(() => {
-    fetchData(weekOffset);
-  }, [weekOffset]);
+    Promise.resolve().then(() => {
+      fetchData(weekOffset);
+    });
+  }, [weekOffset, fetchData]);
 
   const handleAutoGenerate = () => {
     if (employees.length === 0) {

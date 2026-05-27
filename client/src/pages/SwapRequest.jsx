@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeftRight, Calendar, User, Clock, Check, Send, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { ArrowLeftRight, Calendar, Clock, Check, CheckCircle2 } from 'lucide-react';
 
 export default function SwapRequest() {
   const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
@@ -9,7 +9,7 @@ export default function SwapRequest() {
   const [myShifts, setMyShifts] = useState([]);
   const [swapRequests, setSwapRequests] = useState([]);
 
-  const fetchSwapRequests = async () => {
+  const fetchSwapRequests = useCallback(async () => {
     try {
       const res = await fetch('/api/swaps');
       if (res.ok) {
@@ -19,9 +19,9 @@ export default function SwapRequest() {
     } catch (err) {
       console.error('Failed to fetch swap requests:', err);
     }
-  };
+  }, []);
 
-  const fetchScheduleAndCalculateShifts = async () => {
+  const fetchScheduleAndCalculateShifts = useCallback(async () => {
     try {
       const res = await fetch('/api/schedule');
       if (res.ok) {
@@ -49,12 +49,14 @@ export default function SwapRequest() {
     } catch (err) {
       console.error('Failed to fetch schedule for shifts:', err);
     }
-  };
+  }, [currentUser]);
 
   useEffect(() => {
-    fetchScheduleAndCalculateShifts();
-    fetchSwapRequests();
-  }, [currentUser]);
+    Promise.resolve().then(() => {
+      fetchScheduleAndCalculateShifts();
+      fetchSwapRequests();
+    });
+  }, [fetchScheduleAndCalculateShifts, fetchSwapRequests]);
 
   const handleCreateRequest = async (shift) => {
     const reason = prompt('請輸入換班原因：');

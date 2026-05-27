@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, DollarSign, Users, ShieldAlert, Save, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, DollarSign, Users, ShieldAlert, Save, RefreshCw } from 'lucide-react';
 
 const TIME_SLOTS = [
   '08:00 - 10:00',

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Edit2, Trash2, ChevronRight, User, X, UserCircle, DollarSign } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { UserPlus, Search, Edit2, Trash2, X, UserCircle } from 'lucide-react';
 
 export default function EmployeeManagement() {
   const [employees, setEmployees] = useState([]);
@@ -14,7 +14,7 @@ export default function EmployeeManagement() {
   // Editing Employee State
   const [editingEmp, setEditingEmp] = useState(null);
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       const res = await fetch('/api/employees');
       const data = await res.json();
@@ -22,9 +22,9 @@ export default function EmployeeManagement() {
     } catch (err) {
       console.error('Failed to fetch employees', err);
     }
-  };
+  }, []);
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       const res = await fetch('/api/settings');
       const data = await res.json();
@@ -36,12 +36,14 @@ export default function EmployeeManagement() {
     } catch (err) {
       console.error('Failed to fetch settings', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchEmployees();
-    fetchSettings();
-  }, []);
+    Promise.resolve().then(() => {
+      fetchEmployees();
+      fetchSettings();
+    });
+  }, [fetchEmployees, fetchSettings]);
 
   const handleAddEmployee = async (e) => {
     e.preventDefault();

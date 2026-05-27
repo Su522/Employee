@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, ArrowLeftRight, LogOut, Bell, UserCircle, CheckSquare, ShieldCheck, Lock, X } from 'lucide-react';
+import { Calendar, ArrowLeftRight, LogOut, Bell, UserCircle, CheckSquare, ShieldCheck, Lock, X } from 'lucide-react';
 
 export default function EmployeeLayout() {
   const location = useLocation();

@@ -1,19 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, ArrowLeftRight, User, CheckCircle2, ChevronLeft, ChevronRight, Bell, Sparkles, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Clock, User, Sparkles, ChevronDown } from 'lucide-react';
 
 export default function EmployeeDashboard() {
-  const [currentUser, setCurrentUser] = useState('訪客');
+  const [currentUser] = useState(() => {
+    const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
+    return auth.name;
+  });
   const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
   const timeSlots = ['08:00 - 10:00', '10:00 - 12:00', '12:00 - 14:00', '14:00 - 16:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00', '22:00 - 00:00'];
 
   const [schedule, setSchedule] = useState({});
   const [stats, setStats] = useState({ hours: 0, pay: 0 });
-  const [isImpersonated, setIsImpersonated] = useState(false);
+  const [isImpersonated] = useState(() => {
+    const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
+    return auth.isImpersonated;
+  });
   const [viewMode, setViewMode] = useState('personal'); // 'personal' or 'all'
   const [activeWeek, setActiveWeek] = useState({ start: '', end: '' });
   const [weekOffset, setWeekOffset] = useState(0); // Default to 0 (This Week) for employee view
 
-  const loadDashboardData = async (offset) => {
+  const loadDashboardData = useCallback(async (offset) => {
     try {
       const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
       
@@ -52,7 +58,7 @@ export default function EmployeeDashboard() {
     } catch (err) {
       console.error('Failed to load employee dashboard data', err);
     }
-  };
+  }, []);
 
   const getWeeksList = () => {
     const today = new Date();
@@ -93,11 +99,10 @@ export default function EmployeeDashboard() {
   };
 
   useEffect(() => {
-    const auth = JSON.parse(sessionStorage.getItem('auth_user') || '{"name": "訪客", "isImpersonated": false}');
-    setCurrentUser(auth.name);
-    setIsImpersonated(auth.isImpersonated);
-    loadDashboardData(weekOffset);
-  }, [weekOffset]);
+    Promise.resolve().then(() => {
+      loadDashboardData(weekOffset);
+    });
+  }, [weekOffset, loadDashboardData]);
 
   const handleSwapRequest = async (rowIdx, colIdx, day, time) => {
     const confirm = window.confirm(`您確定要針對「${day} ${time}」的班次發起換班申請嗎？`);

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { CheckCircle2, XCircle, Clock, ArrowLeftRight, User, AlertCircle, ArrowRight } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { CheckCircle2, XCircle, Clock, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function SwapApproval() {
   const [requests, setRequests] = useState([]);
 
-  const fetchSwapRequests = async () => {
+  const fetchSwapRequests = useCallback(async () => {
     try {
       const res = await fetch('/api/swaps');
       if (res.ok) {
@@ -14,11 +14,13 @@ export default function SwapApproval() {
     } catch (err) {
       console.error('Failed to fetch swap requests:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchSwapRequests();
-  }, []);
+    Promise.resolve().then(() => {
+      fetchSwapRequests();
+    });
+  }, [fetchSwapRequests]);
 
   const handleAction = async (id, newStatus) => {
     try {

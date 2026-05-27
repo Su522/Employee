@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { DollarSign, Clock, Users, Calendar, TrendingUp, AlertCircle } from 'lucide-react';
 
 export default function PayRecord() {

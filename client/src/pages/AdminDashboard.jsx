@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Calendar, Settings, LogOut, Bell, DollarSign, ArrowLeftRight, ShieldCheck, Clock, AlertTriangle, Lock, X } from 'lucide-react';
+import { Users, Calendar, Settings, LogOut, Bell, DollarSign, ArrowLeftRight, ShieldCheck, Clock, Lock, X } from 'lucide-react';
 
 export default function AdminDashboard() {
   const location = useLocation();

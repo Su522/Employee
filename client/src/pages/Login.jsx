@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Calendar, ShieldCheck, UserCircle, Sparkles } from 'lucide-react';
+import { Lock, User, LogIn, ShieldCheck, UserCircle, Sparkles } from 'lucide-react';
 
 export default function Login() {
   const [role, setRole] = useState('admin');
